@@ -9,6 +9,7 @@ const UploadPage = lazy(() => import("./pages/UploadPage"));
 const DocsPage = lazy(() => import("./pages/DocsPage"));
 const DocDetailPage = lazy(() => import("./pages/DocDetailPage"));
 const CatalogPage = lazy(() => import("./pages/CatalogPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 
 export default function App() {
   useLang(); // volver a pintar al cambiar de idioma
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="/albaranes" element={<DocsPage />} />
           <Route path="/albaranes/:id" element={<DocDetailPage />} />
           <Route path="/productos" element={<CatalogPage />} />
+          <Route path="/ajustes" element={<SettingsPage />} />
           <Route path="*" element={<HomePage />} />
         </Routes>
       </Suspense>

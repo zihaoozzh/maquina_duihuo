@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import Scanner from "../components/Scanner";
-import { db, deleteDocument, type DocLine } from "../lib/db";
+import { changeReceived, db, deleteDocument, type DocLine } from "../lib/db";
 import { barcodeKey } from "../lib/ean";
 import { formatEur, formatQty } from "../lib/num";
 import { t } from "../lib/i18n";
@@ -27,16 +27,12 @@ export default function DocDetailPage() {
       setFlash({ ok: false, text: `${code} · ${t("No está en este albarán")}` });
       return;
     }
-    // Leer el valor actual de la base de datos (al escanear rápido la lista puede ir atrasada)
-    const received = await db.transaction("rw", db.lines, async () => {
-      const cur = (await db.lines.get(line.id))?.received ?? 0;
-      await db.lines.update(line.id, { received: cur + 1 });
-      return cur + 1;
-    });
+    // changeReceived lee el valor actual (al escanear rápido la lista puede ir atrasada)
+    const received = await changeReceived(line.id, 1);
     setFlash({ ok: true, text: `${line.description} · ${received}/${formatQty(line.qty)}` });
   }
 
-  const setReceived = (l: DocLine, v: number) => db.lines.update(l.id, { received: Math.max(0, v) });
+  const setReceived = (l: DocLine, v: number) => changeReceived(l.id, { set: v });
   const done = lines.filter((l) => l.qty != null && l.received === l.qty).length;
 
   return (

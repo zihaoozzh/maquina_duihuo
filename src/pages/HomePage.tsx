@@ -2,8 +2,10 @@ import { Link } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, getMeta } from "../lib/db";
 import { t } from "../lib/i18n";
+import { useCloud } from "../lib/cloud";
 
 export default function HomePage() {
+  const { session } = useCloud();
   const docCount = useLiveQuery(() => db.docs.count(), []);
   const catalog = useLiveQuery(() => getMeta<{ count: number; importedAt: number }>("catalog"), []);
   return (
@@ -27,7 +29,9 @@ export default function HomePage() {
           </div>
         </Link>
       </div>
-      <p className="text-center text-xs text-slate-500">{t("Los datos se guardan en este móvil.")}</p>
+      <Link to="/ajustes" className="block text-center text-xs text-slate-500 underline">
+        {session ? `✓ ${t("Conectado a la base de datos compartida")}` : t("Los datos se guardan solo en este móvil. Conectar la base de datos compartida →")}
+      </Link>
     </div>
   );
 }

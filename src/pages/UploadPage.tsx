@@ -4,6 +4,7 @@ import LinesEditor, { emptyLine, fromEditable, toEditable, type EditableLine } f
 import { parseDocument, type ParsedDocument } from "../lib/parse";
 import { saveDocument, type DocSource } from "../lib/db";
 import { t } from "../lib/i18n";
+import type { PageImage } from "../lib/ai";
 
 type Step = { kind: "pick" } | { kind: "reading" } | { kind: "review" };
 
@@ -15,29 +16,50 @@ function kindOf(file: File): DocSource {
   return "pdf";
 }
 
-async function readFile(file: File): Promise<{ doc: ParsedDocument; notice: string }> {
-  const kind = kindOf(file);
-  const empty: ParsedDocument = { lines: [], supplier: "", number: "", date: "", mode: "heuristic" };
-  if (kind === "photo") {
-    return { doc: empty, notice: t("La lectura de fotos con IA llegará pronto. Mientras tanto puedes añadir las líneas a mano.") };
+const EMPTY: ParsedDocument = { lines: [], supplier: "", number: "", date: "", mode: "heuristic" };
+
+interface ReadResult {
+  doc: ParsedDocument;
+  notice: string;
+  usedAi: boolean;
+}
+
+/** Fotos (una o varias páginas) o PDF escaneado → IA */
+async function readWithAiOrNotice(getPages: () => Promise<PageImage[]>, noAiNotice: string): Promise<ReadResult> {
+  const ai = await import("../lib/ai");
+  if (!ai.aiAvailable()) return { doc: EMPTY, notice: t(noAiNotice), usedAi: false };
+  const doc = await ai.readWithAi(await getPages());
+  return { doc, notice: doc.lines.length ? "" : t("No se ha encontrado ninguna línea de producto."), usedAi: true };
+}
+
+async function readFiles(files: File[]): Promise<ReadResult> {
+  const kinds = files.map(kindOf);
+  if (kinds.every((k) => k === "photo")) {
+    const ai = await import("../lib/ai");
+    return readWithAiOrNotice(
+      () => Promise.all(files.map(ai.imageFileToPage)),
+      "Para leer fotos con IA, conecta la base de datos en Ajustes. Mientras tanto puedes añadir las líneas a mano.",
+    );
   }
+  const file = files[0];
   const data = await file.arrayBuffer();
-  if (kind === "excel") {
+  if (kindOf(file) === "excel") {
     const { readSpreadsheet } = await import("../lib/excel");
     const sheets = readSpreadsheet(data).map((s) => parseDocument(s.rows));
-    const best = sheets.sort((a, b) => b.lines.length - a.lines.length)[0] ?? empty;
-    return { doc: best, notice: best.lines.length ? "" : t("No se ha encontrado ninguna línea de producto.") };
+    const best = sheets.sort((a, b) => b.lines.length - a.lines.length)[0] ?? EMPTY;
+    return { doc: best, notice: best.lines.length ? "" : t("No se ha encontrado ninguna línea de producto."), usedAi: false };
   }
   const { readPdf } = await import("../lib/pdf");
-  const pdf = await readPdf(data);
+  const pdf = await readPdf(data.slice(0));
   if (pdf.scanned) {
-    return {
-      doc: empty,
-      notice: t("Este PDF es escaneado (es una imagen). Para leerlo hará falta la lectura con IA, que llegará pronto. Mientras tanto puedes añadir las líneas a mano."),
-    };
+    const ai = await import("../lib/ai");
+    return readWithAiOrNotice(
+      () => ai.pdfToPages(data),
+      "Este PDF es escaneado (es una imagen). Para leerlo con IA, conecta la base de datos en Ajustes. Mientras tanto puedes añadir las líneas a mano.",
+    );
   }
   const doc = parseDocument(pdf.rows);
-  return { doc, notice: doc.lines.length ? "" : t("No se ha encontrado ninguna línea de producto.") };
+  return { doc, notice: doc.lines.length ? "" : t("No se ha encontrado ninguna línea de producto."), usedAi: false };
 }
 
 export default function UploadPage() {
@@ -45,35 +67,56 @@ export default function UploadPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState<Step>({ kind: "pick" });
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [usedAi, setUsedAi] = useState(false);
   const [notice, setNotice] = useState("");
   const [lines, setLines] = useState<EditableLine[]>([]);
   const [meta, setMeta] = useState({ supplier: "", number: "", date: "" });
   const [saving, setSaving] = useState(false);
 
-  async function onFile(f: File | undefined) {
-    if (!f) return;
-    setFile(f);
+  async function onFiles(list: FileList | null | undefined) {
+    const picked = list ? Array.from(list) : [];
+    if (picked.length === 0) return;
+    setFiles(picked);
     setStep({ kind: "reading" });
     try {
-      const { doc, notice } = await readFile(f);
+      const { doc, notice, usedAi } = await readFiles(picked);
       setNotice(notice);
+      setUsedAi(usedAi);
       setLines(doc.lines.length ? doc.lines.map(toEditable) : [emptyLine()]);
       setMeta({ supplier: doc.supplier, number: doc.number, date: doc.date || new Date().toISOString().slice(0, 10) });
       setStep({ kind: "review" });
     } catch (e) {
       console.error(e);
-      setNotice(t("No se pudo leer el archivo."));
+      setNotice(`${t("No se pudo leer el archivo.")} ${e instanceof Error ? t(e.message) : ""}`);
       setStep({ kind: "pick" });
     }
   }
 
+  /** Para un PDF con texto que no se ha leído bien: probar con IA */
+  async function retryWithAi() {
+    const file = files[0];
+    if (!file) return;
+    setStep({ kind: "reading" });
+    try {
+      const ai = await import("../lib/ai");
+      const doc = await ai.readWithAi(await ai.pdfToPages(await file.arrayBuffer()));
+      setUsedAi(true);
+      setNotice(doc.lines.length ? "" : t("No se ha encontrado ninguna línea de producto."));
+      setLines(doc.lines.length ? doc.lines.map(toEditable) : [emptyLine()]);
+      setMeta((m) => ({ supplier: doc.supplier || m.supplier, number: doc.number || m.number, date: doc.date || m.date }));
+    } catch (e) {
+      setNotice(`${t("No se pudo leer el archivo.")} ${e instanceof Error ? t(e.message) : ""}`);
+    }
+    setStep({ kind: "review" });
+  }
+
   async function save() {
     const clean = lines.map(fromEditable).filter((l) => l.description || l.ean || l.ref);
-    if (clean.length === 0 || !file) return;
+    if (clean.length === 0 || files.length === 0) return;
     setSaving(true);
     try {
-      const id = await saveDocument({ ...meta, fileName: file.name, source: kindOf(file) === "photo" ? "photo" : kindOf(file) }, clean);
+      const id = await saveDocument({ ...meta, fileName: files.map((f) => f.name).join(", "), source: usedAi ? "photo" : kindOf(files[0]) }, clean);
       navigate(`/albaranes/${id}`, { replace: true });
     } finally {
       setSaving(false);
@@ -81,7 +124,12 @@ export default function UploadPage() {
   }
 
   if (step.kind === "reading") {
-    return <div className="card py-12 text-center text-lg font-semibold text-slate-600">{t("Leyendo documento…")}</div>;
+    return (
+      <div className="card py-12 text-center text-lg font-semibold text-slate-600">
+        {t("Leyendo documento…")}
+        <p className="mt-2 text-sm font-normal">{t("Con fotos puede tardar hasta un minuto.")}</p>
+      </div>
+    );
   }
 
   if (step.kind === "pick") {
@@ -89,6 +137,7 @@ export default function UploadPage() {
       <div className="space-y-4">
         <div className="card space-y-3 text-center">
           <p className="text-slate-600">{t("PDF, Excel o foto del albarán o factura")}</p>
+          <p className="text-xs text-slate-500">{t("Si el albarán tiene varias páginas, elige todas las fotos a la vez.")}</p>
           <button type="button" className="btn-primary w-full py-5 text-lg" onClick={() => fileRef.current?.click()}>
             📄 {t("Elegir archivo")}
           </button>
@@ -100,8 +149,9 @@ export default function UploadPage() {
             type="file"
             className="hidden"
             accept="application/pdf,.pdf,.xlsx,.xls,.xlsm,.ods,.csv,image/*"
+            multiple
             onChange={(e) => {
-              onFile(e.target.files?.[0]);
+              onFiles(e.target.files);
               e.target.value = "";
             }}
           />
@@ -112,7 +162,7 @@ export default function UploadPage() {
             accept="image/*"
             capture="environment"
             onChange={(e) => {
-              onFile(e.target.files?.[0]);
+              onFiles(e.target.files);
               e.target.value = "";
             }}
           />
@@ -126,7 +176,9 @@ export default function UploadPage() {
     <div className="space-y-4">
       <div className="card space-y-3">
         <h2 className="font-bold">{t("Datos del documento")}</h2>
-        <p className="truncate text-xs text-slate-500">{file?.name}</p>
+        <p className="truncate text-xs text-slate-500">
+          {files.map((f) => f.name).join(", ")} · {usedAi ? t("Leído con IA") : t("Leído sin IA")}
+        </p>
         <div>
           <label className="label">{t("Proveedor")}</label>
           <input className="input" value={meta.supplier} onChange={(e) => setMeta({ ...meta, supplier: e.target.value })} />
@@ -143,6 +195,12 @@ export default function UploadPage() {
         </div>
       </div>
       {notice && <p className="card text-amber-700">{notice}</p>}
+      {!usedAi && files[0] && kindOf(files[0]) === "pdf" && (
+        <button type="button" className="btn-secondary w-full" onClick={retryWithAi}>
+          ✨ {t("¿No se ha leído bien? Leer con IA")}
+        </button>
+      )}
+      {usedAi && <p className="text-sm font-semibold text-amber-700">{t("La IA puede equivocarse: revisa sobre todo los códigos de barras y los precios.")}</p>}
       <p className="text-sm font-semibold text-slate-600">
         {t("Revisa las líneas antes de guardar")} · {t("Toca una celda para corregirla")}
       </p>

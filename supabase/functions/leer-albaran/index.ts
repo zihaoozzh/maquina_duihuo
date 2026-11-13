@@ -1,0 +1,63 @@
+// Edge Function de Supabase: recibe las fotos de un albarán y devuelve sus líneas.
+// La clave de la IA (ANTHROPIC_API_KEY) se guarda como secreto en Supabase, nunca en el móvil.
+import Anthropic from "npm:@anthropic-ai/sdk@1.8.0";
+import { createClient } from "npm:@supabase/supabase-js@2.119.0";
+import { extractAlbaran, ReadError, type PageImage } from "./extract.ts";
+
+const MAX_PAGES = 10;
+const MAX_TOTAL_BASE64 = 25 * 1024 * 1024;
+
+const cors = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
+
+const anthropic = new Anthropic(); // lee ANTHROPIC_API_KEY
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return json({ error: "Método no permitido" }, 405);
+
+  // Solo la cuenta de la tienda (sesión iniciada), no cualquiera con la clave pública
+  const auth = req.headers.get("Authorization") ?? "";
+  const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    global: { headers: { Authorization: auth } },
+  });
+  const { data: userData } = await supabase.auth.getUser(auth.replace(/^Bearer\s+/i, ""));
+  if (!userData?.user) return json({ error: "Inicia sesión con la cuenta de la tienda." }, 401);
+
+  let images: PageImage[];
+  try {
+    const body = await req.json();
+    images = body?.images;
+  } catch {
+    return json({ error: "Petición no válida." }, 400);
+  }
+  const okType = (t: unknown) => t === "image/jpeg" || t === "image/png" || t === "image/webp";
+  if (
+    !Array.isArray(images) ||
+    images.length === 0 ||
+    images.length > MAX_PAGES ||
+    !images.every((i) => okType(i?.media_type) && typeof i?.data === "string" && i.data.length > 0)
+  ) {
+    return json({ error: `Envía entre 1 y ${MAX_PAGES} imágenes.` }, 400);
+  }
+  if (images.reduce((s, i) => s + i.data.length, 0) > MAX_TOTAL_BASE64) return json({ error: "Las fotos son demasiado grandes." }, 413);
+
+  try {
+    const albaran = await extractAlbaran(anthropic, images);
+    return json(albaran);
+  } catch (e) {
+    if (e instanceof ReadError) return json({ error: e.message, code: e.code }, 422);
+    if (e instanceof Anthropic.RateLimitError) return json({ error: "La IA está ocupada. Prueba en un minuto." }, 429);
+    if (e instanceof Anthropic.AuthenticationError) return json({ error: "La clave de la IA no es válida (revisa ANTHROPIC_API_KEY)." }, 500);
+    if (e instanceof Anthropic.BadRequestError) return json({ error: `La IA rechazó la petición: ${e.message}` }, 400);
+    if (e instanceof Anthropic.APIError) return json({ error: `Error de la IA (${e.status}).` }, 502);
+    console.error(e);
+    return json({ error: "Error inesperado al leer el documento." }, 500);
+  }
+});

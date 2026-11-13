@@ -18,6 +18,9 @@ export interface DeliveryDoc {
   createdAt: number;
   lineCount: number;
   total: number;
+  /** 1 = cambios pendientes de subir a la base de datos compartida */
+  dirty?: number;
+  rev?: number;
 }
 
 export interface DocLine {
@@ -34,6 +37,14 @@ export interface DocLine {
   total: number | null;
   /** Unidades comprobadas al recibir la mercancía (对货) */
   received: number;
+  dirty?: number;
+  rev?: number;
+}
+
+/** Borrados pendientes de subir */
+export interface Tombstone {
+  id: string;
+  table: "docs" | "lines";
 }
 
 export interface MetaEntry {
@@ -46,6 +57,7 @@ export const db = new Dexie("maquina-duihuo") as Dexie & {
   lines: EntityTable<DocLine, "id">;
   catalog: EntityTable<CatalogProduct, "key">;
   meta: EntityTable<MetaEntry, "key">;
+  tombstones: EntityTable<Tombstone, "id">;
 };
 
 db.version(1).stores({
@@ -54,6 +66,28 @@ db.version(1).stores({
   catalog: "key, ref, name",
   meta: "key",
 });
+db.version(2).stores({
+  docs: "id, createdAt, date, supplier, dirty",
+  lines: "id, docId, key, ref, dirty",
+  catalog: "key, ref, name",
+  meta: "key",
+  tombstones: "id",
+});
+
+let revCounter = 0;
+/** Marca un registro como modificado en este móvil (pendiente de subir). */
+export const touched = () => ({ dirty: 1, rev: Date.now() * 1000 + (revCounter++ % 1000) });
+
+/** Avisa al sincronizador de que hay cambios locales. */
+type Listener = () => void;
+const changeListeners = new Set<Listener>();
+export function onLocalChange(fn: Listener) {
+  changeListeners.add(fn);
+  return () => changeListeners.delete(fn);
+}
+export function notifyLocalChange() {
+  changeListeners.forEach((f) => f());
+}
 
 export const uuid = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -66,19 +100,35 @@ export async function saveDocument(doc: Omit<DeliveryDoc, "id" | "createdAt" | "
   const id = uuid();
   const total = lines.reduce((s, l) => s + (l.total ?? 0), 0);
   await db.transaction("rw", db.docs, db.lines, async () => {
-    await db.docs.add({ ...doc, id, createdAt: Date.now(), lineCount: lines.length, total: Math.round(total * 100) / 100 });
+    await db.docs.add({ ...doc, id, createdAt: Date.now(), lineCount: lines.length, total: Math.round(total * 100) / 100, ...touched() });
     await db.lines.bulkAdd(
-      lines.map((l, pos) => ({ ...l, id: uuid(), docId: id, pos, key: l.ean ? barcodeKey(l.ean) : "", received: 0 })),
+      lines.map((l, pos) => ({ ...l, id: uuid(), docId: id, pos, key: l.ean ? barcodeKey(l.ean) : "", received: 0, ...touched() })),
     );
   });
+  notifyLocalChange();
   return id;
 }
 
 export async function deleteDocument(id: string): Promise<void> {
-  await db.transaction("rw", db.docs, db.lines, async () => {
-    await db.lines.where("docId").equals(id).delete();
+  await db.transaction("rw", [db.docs, db.lines, db.tombstones], async () => {
+    const lineIds = (await db.lines.where("docId").equals(id).primaryKeys()) as string[];
+    await db.tombstones.bulkPut([{ id, table: "docs" }, ...lineIds.map((l) => ({ id: l, table: "lines" as const }))]);
+    await db.lines.bulkDelete(lineIds);
     await db.docs.delete(id);
   });
+  notifyLocalChange();
+}
+
+/** Cambia las unidades recibidas de una línea (modo 对货). Devuelve el nuevo valor. */
+export async function changeReceived(lineId: string, delta: number | { set: number }): Promise<number> {
+  const value = await db.transaction("rw", db.lines, async () => {
+    const cur = (await db.lines.get(lineId))?.received ?? 0;
+    const next = Math.max(0, typeof delta === "number" ? cur + delta : delta.set);
+    await db.lines.update(lineId, { received: next, ...touched() });
+    return next;
+  });
+  notifyLocalChange();
+  return value;
 }
 
 export interface LineWithDoc extends DocLine {
@@ -104,8 +154,19 @@ export async function replaceCatalog(products: CatalogProduct[], fileName: strin
   await db.transaction("rw", db.catalog, db.meta, async () => {
     await db.catalog.clear();
     await db.catalog.bulkPut(products);
-    await db.meta.put({ key: "catalog", value: { fileName, importedAt: Date.now(), count: products.length } });
+    await db.meta.put({ key: "catalog", value: { fileName, importedAt: Date.now(), count: products.length, importId: uuid(), pushed: false } satisfies CatalogMeta });
   });
+  notifyLocalChange();
+}
+
+export interface CatalogMeta {
+  fileName: string;
+  importedAt: number;
+  count: number;
+  /** Identifica cada importación para saber si otro móvil tiene una más nueva */
+  importId: string;
+  /** false = falta subirla a la base de datos compartida */
+  pushed: boolean;
 }
 
 export async function getMeta<T>(key: string): Promise<T | undefined> {

@@ -79,3 +79,34 @@ export async function readPdf(data: ArrayBuffer): Promise<PdfText> {
   }
   return { rows, pages, scanned: chars < 30 * Math.max(1, pages) };
 }
+
+/** Dibuja las páginas del PDF (para leer con IA los escaneados). */
+export async function renderPdfPages(data: ArrayBuffer, maxPages: number, maxSide: number): Promise<HTMLCanvasElement[]> {
+  const task = pdfjs.getDocument({
+    data: new Uint8Array(data),
+    cMapUrl: `${import.meta.env.BASE_URL}pdfjs/cmaps/`,
+    cMapPacked: true,
+  });
+  const doc = await task.promise;
+  const out: HTMLCanvasElement[] = [];
+  try {
+    const n = Math.min(doc.numPages, maxPages);
+    for (let p = 1; p <= n; p++) {
+      const page = await doc.getPage(p);
+      const base = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: Math.min(3, maxSide / Math.max(base.width, base.height)) });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+      out.push(canvas);
+      page.cleanup();
+    }
+  } finally {
+    await task.destroy();
+  }
+  return out;
+}
