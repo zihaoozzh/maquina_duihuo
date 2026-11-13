@@ -149,6 +149,8 @@ const ZH: Record<string, string> = {
   "La IA no responde. Prueba más tarde.": "AI 没有响应，请稍后再试。",
   "Para leer fotos con IA, conecta la base de datos en Ajustes.": "要用 AI 识别照片，请先在设置中连接数据库。",
   "Invalid login credentials": "邮箱或密码错误",
+  "Falta la clave de la IA en el servidor (GEMINI_API_KEY o ANTHROPIC_API_KEY).": "服务器缺少 AI 密钥（GEMINI_API_KEY 或 ANTHROPIC_API_KEY）。",
+  "La clave de la IA no es válida o el modelo no existe (revisa GEMINI_API_KEY y GEMINI_MODEL).": "AI 密钥无效或模型不存在（请检查 GEMINI_API_KEY 和 GEMINI_MODEL）。",
 };
 
 const KEY = "lang";

@@ -1,12 +1,8 @@
 /**
- * Lectura de albaranes con IA (Claude). Se usa solo con fotos y PDF escaneados.
- * Este archivo no depende de Deno para poder probarlo también con Node.
+ * Lo común a las dos IA (Gemini y Claude): qué datos se piden y con qué instrucciones.
+ * Sin dependencias de Deno para poder probarlo también con Node.
  */
-import type Anthropic from "@anthropic-ai/sdk";
-import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-
-export const MODEL = "claude-opus-5-5";
 
 export const AlbaranSchema = z.object({
   supplier: z.string().describe("Nombre del proveedor (la empresa que emite el documento). Vacío si no se ve."),
@@ -33,7 +29,7 @@ export interface PageImage {
   data: string; // base64 sin saltos de línea
 }
 
-const SYSTEM = `Eres un asistente que transcribe albaranes y facturas de proveedores de una tienda (bazar) en España.
+export const SYSTEM = `Eres un asistente que transcribe albaranes y facturas de proveedores de una tienda (bazar) en España.
 Devuelve todas las líneas de producto del documento, en el orden en que aparecen, sin inventar ninguna.
 
 Reglas:
@@ -53,30 +49,5 @@ export class ReadError extends Error {
   }
 }
 
-export async function extractAlbaran(client: Anthropic, images: PageImage[]): Promise<Albaran> {
-  const response = await client.beta.messages.parse({
-    model: MODEL,
-    max_tokens: 16000,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    system: SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: [
-          ...images.map((img) => ({
-            type: "image" as const,
-            source: { type: "base64" as const, media_type: img.media_type, data: img.data },
-          })),
-          { type: "text", text: `Transcribe las líneas de producto de este documento (${images.length} página${images.length === 1 ? "" : "s"}).` },
-        ],
-      },
-    ],
-    output_config: { format: betaZodOutputFormat(AlbaranSchema) },
-  });
-
-  if (response.stop_reason === "refusal") throw new ReadError("La IA no ha podido leer este documento.", "refusal");
-  if (response.stop_reason === "max_tokens") throw new ReadError("El documento es demasiado largo. Súbelo por partes.", "truncated");
-  if (!response.parsed_output) throw new ReadError("La respuesta de la IA no tiene el formato esperado.", "unparsed");
-  return response.parsed_output;
-}
+export const userPrompt = (pages: number) =>
+  `Transcribe las líneas de producto de este documento (${pages} página${pages === 1 ? "" : "s"}).`;

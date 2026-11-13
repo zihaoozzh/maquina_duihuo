@@ -10,7 +10,7 @@ const files = [];
     else if (/\.(ts|tsx)$/.test(p) && !p.endsWith(".test.ts")) files.push(p);
   }
 })("src");
-files.push("supabase/functions/leer-albaran/index.ts", "supabase/functions/leer-albaran/extract.ts");
+for (const f of readdirSync("supabase/functions/leer-albaran")) if (f.endsWith(".ts")) files.push(`supabase/functions/leer-albaran/${f}`);
 
 const i18n = readFileSync("src/lib/i18n.ts", "utf8");
 const zhBlock = i18n.slice(i18n.indexOf("const ZH"), i18n.indexOf("};", i18n.indexOf("const ZH")));

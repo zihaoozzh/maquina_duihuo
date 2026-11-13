@@ -7,7 +7,7 @@ cantidades y precios**, y luego se escanea el producto con el móvil para ver su
 
 - **Subir albarán**: PDF con texto o Excel/CSV (se leen **sin IA**, con reglas que detectan
   las columnas y comprueban que cantidad × precio = importe). **Fotos y PDF escaneados se leen
-  con IA (Claude)**, a través de una función del servidor que guarda la clave.
+  con IA (Gemini o Claude)**, a través de una función del servidor que guarda la clave.
 - **Revisar antes de guardar**: cada línea se puede corregir; las dudosas salen en amarillo.
 - **Escanear**: con la cámara (o escribiendo el código) se ve el PVP y el stock de la caja,
   el último coste y todas las veces que el producto aparece en albaranes.
@@ -30,11 +30,14 @@ cantidades y precios**, y luego se escanea el producto con el móvil para ver su
    ```bash
    supabase login
    supabase link --project-ref TU_PROYECTO
-   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
    supabase functions deploy leer-albaran
    ```
-   La clave de la IA se crea en [console.anthropic.com](https://console.anthropic.com) y solo vive
-   en Supabase, nunca en el móvil.
+   Después pon la clave de la IA como secreto (Supabase → Edge Functions → Secrets), **una** de estas:
+   - `GEMINI_API_KEY`: clave de Google AI Studio. Opcional: `GEMINI_MODEL` (por defecto
+     `gemini-flash-latest`).
+   - `ANTHROPIC_API_KEY`: clave de [console.anthropic.com](https://console.anthropic.com) (usa Claude).
+   Si están las dos, se usa Gemini salvo que pongas `AI_PROVIDER=claude`. La clave solo vive en
+   Supabase, nunca en el móvil.
 5. En la app: **⚙ Ajustes** → «O escribe la dirección y la clave de Supabase» (Project Settings →
    API: *Project URL* y la clave *anon/publishable*) → entra con la cuenta de la tienda.
 6. Para el segundo móvil: en Ajustes, «Compartir enlace de la tienda», ábrelo allí y entra con la
@@ -53,7 +56,9 @@ npm run build
 ```
 
 - Lectura sin IA: `src/lib/parse.ts` (pruebas en `src/lib/parse.test.ts`).
-- Lectura con IA: `supabase/functions/leer-albaran/` (servidor) y `src/lib/ai.ts` (móvil).
+- Lectura con IA: `supabase/functions/leer-albaran/` (servidor: `gemini.ts`, `claude.ts`,
+  `shared.ts` con el esquema y las instrucciones) y `src/lib/ai.ts` (móvil).
+  Pruebas del servidor: `deno test supabase/functions/leer-albaran/`.
 - Sincronización: `src/lib/sync.ts` (pruebas con un Supabase simulado en `src/lib/sync.test.ts`).
 
 Para que un proveedor nuevo se lea bien, lo mejor es añadir una prueba con sus filas.

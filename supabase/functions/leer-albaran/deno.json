@@ -2,6 +2,7 @@
   "imports": {
     "@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@1.8.0",
     "@anthropic-ai/sdk/": "npm:/@anthropic-ai/sdk@1.8.0/",
+    "@google/genai": "npm:@google/genai@2.31.0",
     "zod": "npm:zod@4.6.7"
   }
 }
