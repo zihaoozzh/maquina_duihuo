@@ -1,0 +1,160 @@
+import { useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import LinesEditor, { emptyLine, fromEditable, toEditable, type EditableLine } from "../components/LinesEditor";
+import { parseDocument, type ParsedDocument } from "../lib/parse";
+import { saveDocument, type DocSource } from "../lib/db";
+import { t } from "../lib/i18n";
+
+type Step = { kind: "pick" } | { kind: "reading" } | { kind: "review" };
+
+function kindOf(file: File): DocSource {
+  const name = file.name.toLowerCase();
+  if (file.type === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  if (/\.(xlsx|xls|xlsm|ods|csv)$/.test(name) || file.type.includes("sheet") || file.type.includes("excel") || file.type === "text/csv") return "excel";
+  if (file.type.startsWith("image/") || /\.(jpe?g|png|webp|heic|heif)$/.test(name)) return "photo";
+  return "pdf";
+}
+
+async function readFile(file: File): Promise<{ doc: ParsedDocument; notice: string }> {
+  const kind = kindOf(file);
+  const empty: ParsedDocument = { lines: [], supplier: "", number: "", date: "", mode: "heuristic" };
+  if (kind === "photo") {
+    return { doc: empty, notice: t("La lectura de fotos con IA llegará pronto. Mientras tanto puedes añadir las líneas a mano.") };
+  }
+  const data = await file.arrayBuffer();
+  if (kind === "excel") {
+    const { readSpreadsheet } = await import("../lib/excel");
+    const sheets = readSpreadsheet(data).map((s) => parseDocument(s.rows));
+    const best = sheets.sort((a, b) => b.lines.length - a.lines.length)[0] ?? empty;
+    return { doc: best, notice: best.lines.length ? "" : t("No se ha encontrado ninguna línea de producto.") };
+  }
+  const { readPdf } = await import("../lib/pdf");
+  const pdf = await readPdf(data);
+  if (pdf.scanned) {
+    return {
+      doc: empty,
+      notice: t("Este PDF es escaneado (es una imagen). Para leerlo hará falta la lectura con IA, que llegará pronto. Mientras tanto puedes añadir las líneas a mano."),
+    };
+  }
+  const doc = parseDocument(pdf.rows);
+  return { doc, notice: doc.lines.length ? "" : t("No se ha encontrado ninguna línea de producto.") };
+}
+
+export default function UploadPage() {
+  const navigate = useNavigate();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const [step, setStep] = useState<Step>({ kind: "pick" });
+  const [file, setFile] = useState<File | null>(null);
+  const [notice, setNotice] = useState("");
+  const [lines, setLines] = useState<EditableLine[]>([]);
+  const [meta, setMeta] = useState({ supplier: "", number: "", date: "" });
+  const [saving, setSaving] = useState(false);
+
+  async function onFile(f: File | undefined) {
+    if (!f) return;
+    setFile(f);
+    setStep({ kind: "reading" });
+    try {
+      const { doc, notice } = await readFile(f);
+      setNotice(notice);
+      setLines(doc.lines.length ? doc.lines.map(toEditable) : [emptyLine()]);
+      setMeta({ supplier: doc.supplier, number: doc.number, date: doc.date || new Date().toISOString().slice(0, 10) });
+      setStep({ kind: "review" });
+    } catch (e) {
+      console.error(e);
+      setNotice(t("No se pudo leer el archivo."));
+      setStep({ kind: "pick" });
+    }
+  }
+
+  async function save() {
+    const clean = lines.map(fromEditable).filter((l) => l.description || l.ean || l.ref);
+    if (clean.length === 0 || !file) return;
+    setSaving(true);
+    try {
+      const id = await saveDocument({ ...meta, fileName: file.name, source: kindOf(file) === "photo" ? "photo" : kindOf(file) }, clean);
+      navigate(`/albaranes/${id}`, { replace: true });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (step.kind === "reading") {
+    return <div className="card py-12 text-center text-lg font-semibold text-slate-600">{t("Leyendo documento…")}</div>;
+  }
+
+  if (step.kind === "pick") {
+    return (
+      <div className="space-y-4">
+        <div className="card space-y-3 text-center">
+          <p className="text-slate-600">{t("PDF, Excel o foto del albarán o factura")}</p>
+          <button type="button" className="btn-primary w-full py-5 text-lg" onClick={() => fileRef.current?.click()}>
+            📄 {t("Elegir archivo")}
+          </button>
+          <button type="button" className="btn-secondary w-full" onClick={() => cameraRef.current?.click()}>
+            📷 {t("Hacer foto")}
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            className="hidden"
+            accept="application/pdf,.pdf,.xlsx,.xls,.xlsm,.ods,.csv,image/*"
+            onChange={(e) => {
+              onFile(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={cameraRef}
+            type="file"
+            className="hidden"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => {
+              onFile(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </div>
+        {notice && <p className="card text-amber-700">{notice}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-3">
+        <h2 className="font-bold">{t("Datos del documento")}</h2>
+        <p className="truncate text-xs text-slate-500">{file?.name}</p>
+        <div>
+          <label className="label">{t("Proveedor")}</label>
+          <input className="input" value={meta.supplier} onChange={(e) => setMeta({ ...meta, supplier: e.target.value })} />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="label">{t("Número")}</label>
+            <input className="input" value={meta.number} onChange={(e) => setMeta({ ...meta, number: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">{t("Fecha")}</label>
+            <input className="input" type="date" value={meta.date} onChange={(e) => setMeta({ ...meta, date: e.target.value })} />
+          </div>
+        </div>
+      </div>
+      {notice && <p className="card text-amber-700">{notice}</p>}
+      <p className="text-sm font-semibold text-slate-600">
+        {t("Revisa las líneas antes de guardar")} · {t("Toca una celda para corregirla")}
+      </p>
+      <LinesEditor lines={lines} onChange={setLines} />
+      <div className="sticky bottom-16 -mx-4 flex gap-2 bg-[var(--bg)]/95 px-4 py-3 backdrop-blur">
+        <button type="button" className="btn-secondary flex-1" onClick={() => setStep({ kind: "pick" })}>
+          {t("Cancelar")}
+        </button>
+        <button type="button" className="btn-primary flex-[2]" disabled={saving} onClick={save}>
+          ✓ {t("Guardar albarán")}
+        </button>
+      </div>
+    </div>
+  );
+}
