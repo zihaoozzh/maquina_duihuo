@@ -1,4 +1,4 @@
-/** Español / 中文. Los textos se escriben en español y aquí está su traducción. */
+/** 中文 (por defecto) / Español. Los textos se escriben en español y aquí está su traducción. */
 import { useSyncExternalStore } from "react";
 
 export type Lang = "es" | "zh";
@@ -130,6 +130,25 @@ const ZH: Record<string, string> = {
   "El documento es demasiado largo. Súbelo por partes.": "文件太长，请分开上传。",
   "La IA está ocupada. Prueba en un minuto.": "AI 繁忙，请一分钟后再试。",
   "Inicia sesión con la cuenta de la tienda.": "请用店铺账号登录。",
+  "PVP sin IVA 21%": "售价不含 21% 增值税",
+  "Sin conexión": "没有网络",
+  "Email": "邮箱",
+  "Clave anon / publishable": "anon / publishable 密钥",
+  "Aceptar": "确定",
+  "No se pudo abrir la foto (¿formato HEIC?). Prueba a hacerla desde la app.": "无法打开照片（HEIC 格式？），请在本应用里直接拍照。",
+  "Respuesta vacía de la IA.": "AI 没有返回内容。",
+  "Falta configurar la base de datos.": "还没有设置数据库。",
+  "Método no permitido": "不允许的请求方法",
+  "Petición no válida.": "请求无效。",
+  "Las fotos son demasiado grandes.": "照片太大。",
+  "La clave de la IA no es válida (revisa ANTHROPIC_API_KEY).": "AI 密钥无效（请检查 ANTHROPIC_API_KEY）。",
+  "Error inesperado al leer el documento.": "读取文件时出现意外错误。",
+  "La respuesta de la IA no tiene el formato esperado.": "AI 返回的格式不对。",
+  "Demasiadas fotos o ninguna (máximo 10 páginas).": "照片太多或没有照片（最多 10 页）。",
+  "La IA rechazó la petición.": "AI 拒绝了请求。",
+  "La IA no responde. Prueba más tarde.": "AI 没有响应，请稍后再试。",
+  "Para leer fotos con IA, conecta la base de datos en Ajustes.": "要用 AI 识别照片，请先在设置中连接数据库。",
+  "Invalid login credentials": "邮箱或密码错误",
 };
 
 const KEY = "lang";
@@ -140,7 +159,7 @@ let current: Lang = (() => {
   } catch {
     /* sin almacenamiento */
   }
-  return typeof navigator !== "undefined" && navigator.language?.startsWith("zh") ? "zh" : "es";
+  return "zh"; // la tienda usa la app en chino; se puede cambiar a español con el botón de arriba
 })();
 const listeners = new Set<() => void>();
 
@@ -151,7 +170,7 @@ export function setLang(l: Lang) {
   } catch {
     /* ignorar */
   }
-  document.documentElement.lang = l;
+  document.documentElement.lang = l === "zh" ? "zh-CN" : "es";
   listeners.forEach((f) => f());
 }
 

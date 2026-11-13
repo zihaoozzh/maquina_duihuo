@@ -15,10 +15,10 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["icon.svg"],
       manifest: {
-        name: "对货 · Albaranes",
+        name: "对货 · 送货单",
         short_name: "对货",
-        description: "Sube albaranes y consulta coste y cantidad escaneando el código de barras.",
-        lang: "es",
+        description: "上传送货单，扫条码查看进价和数量。",
+        lang: "zh-CN",
         display: "standalone",
         orientation: "portrait",
         background_color: "#f5f7fb",

@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
     images.length > MAX_PAGES ||
     !images.every((i) => okType(i?.media_type) && typeof i?.data === "string" && i.data.length > 0)
   ) {
-    return json({ error: `Envía entre 1 y ${MAX_PAGES} imágenes.` }, 400);
+    return json({ error: "Demasiadas fotos o ninguna (máximo 10 páginas)." }, 400);
   }
   if (images.reduce((s, i) => s + i.data.length, 0) > MAX_TOTAL_BASE64) return json({ error: "Las fotos son demasiado grandes." }, 413);
 
@@ -55,8 +55,14 @@ Deno.serve(async (req) => {
     if (e instanceof ReadError) return json({ error: e.message, code: e.code }, 422);
     if (e instanceof Anthropic.RateLimitError) return json({ error: "La IA está ocupada. Prueba en un minuto." }, 429);
     if (e instanceof Anthropic.AuthenticationError) return json({ error: "La clave de la IA no es válida (revisa ANTHROPIC_API_KEY)." }, 500);
-    if (e instanceof Anthropic.BadRequestError) return json({ error: `La IA rechazó la petición: ${e.message}` }, 400);
-    if (e instanceof Anthropic.APIError) return json({ error: `Error de la IA (${e.status}).` }, 502);
+    if (e instanceof Anthropic.BadRequestError) {
+      console.error(e);
+      return json({ error: "La IA rechazó la petición." }, 400);
+    }
+    if (e instanceof Anthropic.APIError) {
+      console.error(e);
+      return json({ error: "La IA no responde. Prueba más tarde." }, 502);
+    }
     console.error(e);
     return json({ error: "Error inesperado al leer el documento." }, 500);
   }

@@ -34,7 +34,7 @@ export default function SettingsPage() {
       await signIn(email, password);
       setPassword("");
     } catch (err) {
-      setMessage(`${t("No se pudo iniciar sesión.")} ${err instanceof Error ? err.message : ""}`);
+      setMessage(`${t("No se pudo iniciar sesión.")} ${err instanceof Error ? t(err.message) : ""}`);
     } finally {
       setBusy(false);
     }
@@ -65,7 +65,7 @@ export default function SettingsPage() {
                     else setMessage(t("El código de tienda no es válido."));
                   }}
                 >
-                  OK
+                  {t("Aceptar")}
                 </button>
               </div>
             </div>
@@ -73,7 +73,7 @@ export default function SettingsPage() {
               <summary className="cursor-pointer font-semibold text-slate-600">{t("O escribe la dirección y la clave de Supabase")}</summary>
               <div className="mt-2 space-y-2">
                 <input className="input" placeholder="https://xxxx.supabase.co" value={url} onChange={(e) => setUrl(e.target.value)} />
-                <input className="input font-mono text-xs" placeholder="anon / publishable key" value={anonKey} onChange={(e) => setAnonKey(e.target.value)} />
+                <input className="input font-mono text-xs" placeholder={t("Clave anon / publishable")} value={anonKey} onChange={(e) => setAnonKey(e.target.value)} />
                 <button type="button" className="btn-primary w-full" onClick={() => connect({ url: normalizeUrl(url), anonKey: anonKey.trim() })}>
                   {t("Conectar")}
                 </button>
@@ -87,7 +87,7 @@ export default function SettingsPage() {
             <p className="text-sm">
               {t("Inicia sesión con la cuenta de la tienda")} · <span className="font-mono text-xs text-slate-500">{new URL(config.url).host}</span>
             </p>
-            <input className="input" type="email" autoComplete="username" placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input className="input" type="email" autoComplete="username" placeholder={t("Email")} value={email} onChange={(e) => setEmail(e.target.value)} />
             <input
               className="input"
               type="password"
@@ -113,7 +113,7 @@ export default function SettingsPage() {
             <p className="text-sm">
               {t("Sincronización")}:{" "}
               <b className={sync.status === "error" ? "text-red-700" : ""}>
-                {sync.status === "syncing" ? t("sincronizando…") : sync.status === "error" ? `${t("error")}: ${sync.error}` : sync.lastSync ? new Date(sync.lastSync).toLocaleTimeString() : "—"}
+                {sync.status === "syncing" ? t("sincronizando…") : sync.status === "error" ? `${t("error")}: ${t(sync.error)}` : sync.lastSync ? new Date(sync.lastSync).toLocaleTimeString() : "—"}
               </b>
             </p>
             <button type="button" className="btn-secondary w-full" onClick={() => syncNow()}>

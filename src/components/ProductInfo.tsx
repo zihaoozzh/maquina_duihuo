@@ -43,7 +43,7 @@ export default function ProductInfo({ code }: { code: string }) {
         )}
         {margin != null && (
           <p className="mt-2 text-xs text-slate-500">
-            {t("Margen")}: {margin.toFixed(0)}% (PVP sin IVA 21%)
+            {t("Margen")}: {margin.toFixed(0)}% ({t("PVP sin IVA 21%")})
           </p>
         )}
       </div>
