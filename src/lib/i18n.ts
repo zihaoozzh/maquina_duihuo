@@ -117,6 +117,8 @@ const ZH: Record<string, string> = {
   "Aceptar": "确定",
   "Falta configurar la base de datos.": "还没有设置数据库。",
   "Invalid login credentials": "邮箱或密码错误",
+  "Cambiar lente": "切换镜头",
+  "Toca la imagen para enfocar": "点击画面对焦",
   "No se puede leer automáticamente (foto o PDF escaneado). Añade las líneas a mano.": "无法自动读取（照片或扫描的 PDF），请手动添加。",
   "Con ella todos los móviles de la tienda ven los mismos albaranes.": "连接后，店里所有手机看到相同的送货单。",
   "Cantidad en el albarán": "送货单数量",

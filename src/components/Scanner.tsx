@@ -1,8 +1,11 @@
 /**
  * Lector de códigos de barras con la cámara.
  * Usa el lector nativo del navegador si existe (Android/Chrome) y si no ZXing (iPhone).
+ * Abre la lente trasera principal (no el teleobjetivo ni el gran angular); si hay varias,
+ * el botón 切换镜头 cambia de una a otra y el móvil recuerda la elegida.
  */
 import { useEffect, useRef, useState } from "react";
+import { listBackCameras, openCamera, refocus, saveCamera, savedCamera, tuneTrack, type CameraInfo } from "../lib/camera";
 import { t } from "../lib/i18n";
 
 interface Props {
@@ -16,7 +19,10 @@ type Detector = { detect: (src: CanvasImageSource) => Promise<{ rawValue: string
 
 export default function Scanner({ onCode, paused }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const trackRef = useRef<MediaStreamTrack | null>(null);
   const [error, setError] = useState("");
+  const [deviceId, setDeviceId] = useState<string | null>(() => savedCamera());
+  const [cameras, setCameras] = useState<CameraInfo[]>([]);
   const onCodeRef = useRef(onCode);
   onCodeRef.current = onCode;
   const pausedRef = useRef(paused);
@@ -42,10 +48,27 @@ export default function Scanner({ onCode, paused }: Props) {
 
     async function start() {
       const video = videoRef.current!;
-      const constraints: MediaStreamConstraints = {
-        audio: false,
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
-      };
+      setError("");
+      stream = await openCamera(deviceId);
+      if (stopped) return;
+
+      // Con el permiso ya dado, las cámaras tienen nombre: si Chrome abrió otra lente, cambiar a la principal
+      const list = await listBackCameras().catch(() => [] as CameraInfo[]);
+      if (stopped) return;
+      setCameras(list);
+      const openedId = stream.getVideoTracks()[0]?.getSettings().deviceId;
+      if (!deviceId && list.length > 1 && list[0].deviceId && openedId !== list[0].deviceId) {
+        stream.getTracks().forEach((tr) => tr.stop());
+        stream = await openCamera(list[0].deviceId);
+        if (stopped) return;
+      }
+      const track = stream.getVideoTracks()[0];
+      trackRef.current = track;
+      await tuneTrack(track);
+      if (stopped) return;
+      video.srcObject = stream;
+      await video.play().catch(() => {});
+
       const Native = (globalThis as unknown as { BarcodeDetector?: { new (o: { formats: string[] }): Detector; getSupportedFormats?: () => Promise<string[]> } }).BarcodeDetector;
       let supported: string[] = [];
       try {
@@ -54,10 +77,6 @@ export default function Scanner({ onCode, paused }: Props) {
         supported = [];
       }
       if (Native && supported.includes("ean_13")) {
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
-        if (stopped) return;
-        video.srcObject = stream;
-        await video.play();
         const detector = new Native({ formats: FORMATS.filter((f) => supported.includes(f)) });
         let busy = false;
         const loop = async () => {
@@ -92,7 +111,7 @@ export default function Scanner({ onCode, paused }: Props) {
         ]);
         const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 80 });
         if (stopped) return;
-        zxingControls = await reader.decodeFromConstraints(constraints, video, (result) => {
+        zxingControls = await reader.decodeFromStream(stream, video, (result) => {
           if (result) emit(result.getText());
         });
         if (stopped) zxingControls.stop();
@@ -106,14 +125,30 @@ export default function Scanner({ onCode, paused }: Props) {
       cancelAnimationFrame(raf);
       zxingControls?.stop();
       stream?.getTracks().forEach((tr) => tr.stop());
+      trackRef.current = null;
     };
-  }, []);
+  }, [deviceId]);
+
+  function nextCamera() {
+    if (cameras.length < 2) return;
+    const current = trackRef.current?.getSettings().deviceId ?? deviceId;
+    const i = cameras.findIndex((c) => c.deviceId === current);
+    const next = cameras[(i + 1) % cameras.length].deviceId;
+    saveCamera(next);
+    setDeviceId(next);
+  }
 
   return (
     <div className="relative overflow-hidden rounded-2xl bg-black">
-      <video ref={videoRef} className="aspect-[4/3] w-full object-cover" muted playsInline />
+      <video ref={videoRef} className="aspect-[4/3] w-full object-cover" muted playsInline onClick={() => trackRef.current && refocus(trackRef.current)} />
       <div className="pointer-events-none absolute inset-x-8 top-1/2 h-24 -translate-y-1/2 rounded-xl border-2 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
       <div className="pointer-events-none absolute inset-x-10 top-1/2 h-0.5 -translate-y-1/2 bg-red-500/80" />
+      <p className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-xs text-white/80">{t("Toca la imagen para enfocar")}</p>
+      {cameras.length > 1 && (
+        <button type="button" className="absolute right-2 top-2 rounded-lg bg-black/60 px-3 py-1.5 text-sm font-semibold text-white" onClick={nextCamera}>
+          ⟳ {t("Cambiar lente")}
+        </button>
+      )}
       {error && <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-6 text-center text-white">{t(error)}</div>}
     </div>
   );
