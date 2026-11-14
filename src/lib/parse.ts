@@ -258,7 +258,21 @@ function isFooterRow(text: string): boolean {
   return STOP_WORDS.test(normalizeText(text));
 }
 
-function rowText(row: Row): string {
+/**
+ * Filas de datos bancarios o de la empresa (IBAN, cuenta para transferencia, SWIFT…):
+ * tienen números largos que no son productos.
+ */
+export function isBankRow(text: string): boolean {
+  // IBAN español: ES + 22 dígitos (con o sin espacios)
+  if (/ES\d{22}(?!\d)/.test(text.toUpperCase().replace(/[\s-]/g, ""))) return true;
+  // "Cuenta / Banco / IBAN / SWIFT…" junto a un número largo que no es un EAN-13
+  const n = normalizeText(text);
+  if (!/\b(iban|swift|bic|cuenta|cta|ccc|banco|entidad|transferencia|domiciliacion)\b/.test(n)) return false;
+  const runs = text.replace(/(\d)[\s.-](?=\d)/g, "$1").match(/\d{10,}/g) ?? [];
+  return runs.some((r) => r.length !== 13);
+}
+
+export function rowText(row: Row): string {
   return row.map((c) => c.text).join(" ").trim();
 }
 
@@ -360,6 +374,10 @@ export function parseRows(rows: Row[]): ParsedLine[] {
     const row = rows[r];
     const text = rowText(row);
     if (!text) continue;
+    if (isBankRow(text)) {
+      last = null;
+      continue;
+    }
     if (lines.length > 0 && isFooterRow(text)) {
       // el pie de página no termina el documento si hay otra cabecera (página siguiente)
       last = null;
@@ -434,4 +452,12 @@ export function parseDocument(rows: Row[]): ParsedDocument {
     date: findDate(allText),
     mode: header ? "header" : "heuristic",
   };
+}
+
+/** Texto plano del documento para la IA: una fila por renglón, celdas separadas por " | ". */
+export function rowsToText(rows: Row[]): string {
+  return rows
+    .map((r) => r.map((c) => c.text.trim()).filter(Boolean).join(" | "))
+    .filter(Boolean)
+    .join("\n");
 }

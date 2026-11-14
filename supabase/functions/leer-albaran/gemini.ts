@@ -1,7 +1,7 @@
 /** Lectura con Gemini (Google). */
 import { FinishReason, type GoogleGenAI } from "@google/genai";
 import { z } from "zod";
-import { AlbaranSchema, ReadError, SYSTEM, userPrompt, type Albaran, type PageImage } from "./shared.ts";
+import { AlbaranSchema, ReadError, SYSTEM, textPrompt, userPrompt, type Albaran, type AlbaranInput } from "./shared.ts";
 
 /** Se puede cambiar con el secreto GEMINI_MODEL sin tocar el código. */
 export const DEFAULT_GEMINI_MODEL = "gemini-flash-latest"; // alias de Google al último Gemini Flash
@@ -9,18 +9,14 @@ export const DEFAULT_GEMINI_MODEL = "gemini-flash-latest"; // alias de Google al
 // Esquema JSON estándar (sin la clave $schema, que Gemini no necesita)
 const { $schema: _schemaUri, ...jsonSchema } = z.toJSONSchema(AlbaranSchema);
 
-export async function extractWithGemini(ai: GoogleGenAI, images: PageImage[], model = DEFAULT_GEMINI_MODEL): Promise<Albaran> {
+export async function extractWithGemini(ai: GoogleGenAI, input: AlbaranInput, model = DEFAULT_GEMINI_MODEL): Promise<Albaran> {
+  const parts =
+    "text" in input
+      ? [{ text: textPrompt(input.text) }]
+      : [...input.images.map((img) => ({ inlineData: { mimeType: img.media_type, data: img.data } })), { text: userPrompt(input.images.length) }];
   const response = await ai.models.generateContent({
     model,
-    contents: [
-      {
-        role: "user",
-        parts: [
-          ...images.map((img) => ({ inlineData: { mimeType: img.media_type, data: img.data } })),
-          { text: userPrompt(images.length) },
-        ],
-      },
-    ],
+    contents: [{ role: "user", parts }],
     config: {
       systemInstruction: SYSTEM,
       responseMimeType: "application/json",

@@ -6,12 +6,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ApiError, GoogleGenAI } from "@google/genai";
 import { createClient } from "npm:@supabase/supabase-js@2.119.0";
-import { ReadError, type Albaran, type PageImage } from "./shared.ts";
+import { ReadError, type Albaran, type AlbaranInput, type PageImage } from "./shared.ts";
 import { extractWithClaude } from "./claude.ts";
 import { DEFAULT_GEMINI_MODEL, extractWithGemini } from "./gemini.ts";
 
 const MAX_PAGES = 10;
 const MAX_TOTAL_BASE64 = 25 * 1024 * 1024;
+const MAX_TEXT = 200_000;
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -34,13 +35,13 @@ function pickProvider(): Provider | null {
 let gemini: GoogleGenAI | null = null;
 let anthropic: Anthropic | null = null;
 
-async function extract(provider: Provider, images: PageImage[]): Promise<Albaran> {
+async function extract(provider: Provider, input: AlbaranInput): Promise<Albaran> {
   if (provider === "gemini") {
     gemini ??= new GoogleGenAI({ apiKey: Deno.env.get("GEMINI_API_KEY") });
-    return extractWithGemini(gemini, images, Deno.env.get("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL);
+    return extractWithGemini(gemini, input, Deno.env.get("GEMINI_MODEL") || DEFAULT_GEMINI_MODEL);
   }
   anthropic ??= new Anthropic(); // lee ANTHROPIC_API_KEY
-  return extractWithClaude(anthropic, images);
+  return extractWithClaude(anthropic, input);
 }
 
 Deno.serve(async (req) => {
@@ -55,29 +56,39 @@ Deno.serve(async (req) => {
   const { data: userData } = await supabase.auth.getUser(auth.replace(/^Bearer\s+/i, ""));
   if (!userData?.user) return json({ error: "Inicia sesión con la cuenta de la tienda." }, 401);
 
-  let images: PageImage[];
+  let body: { images?: PageImage[]; text?: unknown };
   try {
-    const body = await req.json();
-    images = body?.images;
+    body = await req.json();
   } catch {
     return json({ error: "Petición no válida." }, 400);
   }
-  const okType = (t: unknown) => t === "image/jpeg" || t === "image/png" || t === "image/webp";
-  if (
-    !Array.isArray(images) ||
-    images.length === 0 ||
-    images.length > MAX_PAGES ||
-    !images.every((i) => okType(i?.media_type) && typeof i?.data === "string" && i.data.length > 0)
-  ) {
-    return json({ error: "Demasiadas fotos o ninguna (máximo 10 páginas)." }, 400);
+
+  let input: AlbaranInput;
+  if (typeof body?.text === "string") {
+    // Texto de un PDF o Excel (lo extrae el móvil)
+    if (!body.text.trim()) return json({ error: "Petición no válida." }, 400);
+    if (body.text.length > MAX_TEXT) return json({ error: "El documento es demasiado largo. Súbelo por partes." }, 413);
+    input = { text: body.text };
+  } else {
+    const images = body?.images;
+    const okType = (t: unknown) => t === "image/jpeg" || t === "image/png" || t === "image/webp";
+    if (
+      !Array.isArray(images) ||
+      images.length === 0 ||
+      images.length > MAX_PAGES ||
+      !images.every((i) => okType(i?.media_type) && typeof i?.data === "string" && i.data.length > 0)
+    ) {
+      return json({ error: "Demasiadas fotos o ninguna (máximo 10 páginas)." }, 400);
+    }
+    if (images.reduce((s, i) => s + i.data.length, 0) > MAX_TOTAL_BASE64) return json({ error: "Las fotos son demasiado grandes." }, 413);
+    input = { images };
   }
-  if (images.reduce((s, i) => s + i.data.length, 0) > MAX_TOTAL_BASE64) return json({ error: "Las fotos son demasiado grandes." }, 413);
 
   const provider = pickProvider();
   if (!provider) return json({ error: "Falta la clave de la IA en el servidor (GEMINI_API_KEY o ANTHROPIC_API_KEY)." }, 500);
 
   try {
-    const albaran = await extract(provider, images);
+    const albaran = await extract(provider, input);
     return json(albaran);
   } catch (e) {
     if (e instanceof ReadError) return json({ error: e.message, code: e.code }, 422);

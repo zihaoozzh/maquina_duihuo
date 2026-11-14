@@ -40,5 +40,6 @@ export default defineConfig({
   ],
   test: {
     environment: "node",
+    include: ["src/**/*.test.ts"], // las pruebas de supabase/functions son de Deno
   },
 });

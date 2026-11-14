@@ -3,6 +3,8 @@ import { t } from "../lib/i18n";
 import { looksLikeBarcode, cleanBarcode } from "../lib/ean";
 
 export interface EditableLine {
+  /** Solo al editar un albarán ya guardado: id de la línea existente */
+  id?: string;
   ean: string;
   ref: string;
   description: string;
@@ -16,6 +18,7 @@ export interface EditableLine {
 const fmt = (n: number | null) => (n == null ? "" : String(n).replace(".", ","));
 
 export function toEditable(l: {
+  id?: string;
   ean: string;
   ref: string;
   description: string;
@@ -26,6 +29,7 @@ export function toEditable(l: {
   warnings?: string[];
 }): EditableLine {
   return {
+    id: l.id,
     ean: l.ean,
     ref: l.ref,
     description: l.description,
@@ -47,7 +51,7 @@ export function fromEditable(l: EditableLine) {
   const discount = parseNumber(l.discount);
   let total = parseNumber(l.total);
   if (total == null && qty != null && price != null) total = round(qty * price * (1 - (discount ?? 0) / 100));
-  return { ean: cleanBarcode(l.ean), ref: l.ref.trim(), description: l.description.trim(), qty, price, discount, total };
+  return { id: l.id, ean: cleanBarcode(l.ean), ref: l.ref.trim(), description: l.description.trim(), qty, price, discount, total };
 }
 
 interface Props {

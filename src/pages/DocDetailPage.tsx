@@ -2,7 +2,9 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import Scanner from "../components/Scanner";
-import { changeReceived, db, deleteDocument, type DocLine } from "../lib/db";
+import CheckSheet from "../components/CheckSheet";
+import LinesEditor, { fromEditable, toEditable, type EditableLine } from "../components/LinesEditor";
+import { checkLine, db, deleteDocument, updateDocument, type DocLine } from "../lib/db";
 import { barcodeKey } from "../lib/ean";
 import { formatEur, formatQty } from "../lib/num";
 import { t } from "../lib/i18n";
@@ -13,37 +15,102 @@ export default function DocDetailPage() {
   const doc = useLiveQuery(() => db.docs.get(id), [id]);
   const lines = useLiveQuery(() => db.lines.where("docId").equals(id).sortBy("pos"), [id]);
   const [checking, setChecking] = useState(false);
+  const [open, setOpen] = useState<DocLine | null>(null);
   const [flash, setFlash] = useState<{ ok: boolean; text: string } | null>(null);
+  const [editing, setEditing] = useState<{ meta: { supplier: string; number: string; date: string }; lines: EditableLine[] } | null>(null);
+  const [saving, setSaving] = useState(false);
 
   if (doc === undefined || lines === undefined) return <div className="card text-slate-500">…</div>;
   if (!doc) return <div className="card">—</div>;
 
-  async function onScan(code: string) {
+  function onScan(code: string) {
     const key = barcodeKey(code);
-    // Primero una línea que aún no esté completa
-    const line = lines!.find((l) => l.key === key && l.received < (l.qty ?? Infinity)) ?? lines!.find((l) => l.key === key);
+    // La primera línea con ese código que aún no esté comprobada
+    const line = lines!.find((l) => l.key === key && !l.checkedAt) ?? lines!.find((l) => l.key === key);
     if (!line) {
       navigator.vibrate?.([80, 60, 80]);
       setFlash({ ok: false, text: `${code} · ${t("No está en este albarán")}` });
       return;
     }
-    // changeReceived lee el valor actual (al escanear rápido la lista puede ir atrasada)
-    const received = await changeReceived(line.id, 1);
-    setFlash({ ok: true, text: `${line.description} · ${received}/${formatQty(line.qty)}` });
+    setFlash(null);
+    setOpen(line);
   }
 
-  const setReceived = (l: DocLine, v: number) => changeReceived(l.id, { set: v });
-  const done = lines.filter((l) => l.qty != null && l.received === l.qty).length;
+  async function confirmLine(line: DocLine, received: number) {
+    await checkLine(line.id, received);
+    setOpen(null);
+    setFlash({ ok: true, text: `✓ ${line.description} · ${formatQty(received)}` });
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    const clean = editing.lines.map(fromEditable).filter((l) => l.description || l.ean || l.ref);
+    if (clean.length === 0) return;
+    setSaving(true);
+    try {
+      await updateDocument(id, editing.meta, clean);
+      setEditing(null);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="space-y-4">
+        <div className="card space-y-3">
+          <h2 className="font-bold">{t("Editar albarán")}</h2>
+          <div>
+            <label className="label">{t("Proveedor")}</label>
+            <input className="input" value={editing.meta.supplier} onChange={(e) => setEditing({ ...editing, meta: { ...editing.meta, supplier: e.target.value } })} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="label">{t("Número")}</label>
+              <input className="input" value={editing.meta.number} onChange={(e) => setEditing({ ...editing, meta: { ...editing.meta, number: e.target.value } })} />
+            </div>
+            <div>
+              <label className="label">{t("Fecha")}</label>
+              <input className="input" type="date" value={editing.meta.date} onChange={(e) => setEditing({ ...editing, meta: { ...editing.meta, date: e.target.value } })} />
+            </div>
+          </div>
+        </div>
+        <LinesEditor lines={editing.lines} onChange={(l) => setEditing({ ...editing, lines: l })} />
+        <div className="sticky bottom-16 -mx-4 flex gap-2 bg-[var(--bg)]/95 px-4 py-3 backdrop-blur">
+          <button type="button" className="btn-secondary flex-1" onClick={() => setEditing(null)}>
+            {t("Cancelar")}
+          </button>
+          <button type="button" className="btn-primary flex-[2]" disabled={saving} onClick={saveEdit}>
+            ✓ {t("Guardar")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const done = lines.filter((l) => l.checkedAt).length;
 
   return (
     <div className="space-y-3">
       <div className="card">
-        <div className="text-xl font-bold">{doc.supplier || doc.fileName}</div>
-        <div className="text-sm text-slate-600">
-          {[doc.number, doc.date].filter(Boolean).join(" · ")}
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-xl font-bold">{doc.supplier || doc.fileName}</div>
+          <button
+            type="button"
+            className="shrink-0 rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-semibold"
+            onClick={() => setEditing({ meta: { supplier: doc.supplier, number: doc.number, date: doc.date }, lines: lines.map(toEditable) })}
+          >
+            ✎ {t("Editar")}
+          </button>
         </div>
+        <div className="text-sm text-slate-600">{[doc.number, doc.date].filter(Boolean).join(" · ")}</div>
         <div className="mt-1 text-sm">
           {doc.lineCount} {t("líneas")} · {t("Total")}: <b>{formatEur(doc.total)}</b>
+          {done > 0 && (
+            <span className="ml-2 font-semibold text-green-700">
+              {t("Comprobado")} {done}/{lines.length}
+            </span>
+          )}
         </div>
       </div>
 
@@ -53,13 +120,13 @@ export default function DocDetailPage() {
 
       {checking && (
         <div className="space-y-2">
-          <p className="text-center text-sm text-slate-600">{t("Escanea los productos que han llegado")}</p>
-          <Scanner onCode={onScan} />
+          <p className="text-center text-sm text-slate-600">{t("Escanea un producto o toca una línea")}</p>
+          <Scanner onCode={onScan} paused={!!open} />
           {flash && (
             <p className={`rounded-xl p-3 text-center font-semibold ${flash.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`}>{flash.text}</p>
           )}
-          <p className="text-center text-sm">
-            {t("Completo")}: {done}/{lines.length}
+          <p className="text-center text-sm font-semibold">
+            {t("Comprobado")}: {done}/{lines.length}
           </p>
         </div>
       )}
@@ -67,40 +134,44 @@ export default function DocDetailPage() {
       <ul className="space-y-2">
         {lines.map((l) => {
           const diff = l.qty == null ? 0 : l.received - l.qty;
-          const status = !checking && l.received === 0 ? null : diff === 0 ? "ok" : diff < 0 ? "missing" : "extra";
           return (
-            <li key={l.id} className={`card p-3 ${status === "ok" ? "ring-2 ring-green-400" : status === "extra" ? "ring-2 ring-amber-400" : ""}`}>
-              <div className="font-semibold">{l.description || "—"}</div>
-              <div className="font-mono text-xs text-slate-500">
-                {l.ean || t("Sin código")} {l.ref && `· ${l.ref}`}
-              </div>
-              <div className="mt-1 flex flex-wrap gap-x-4 text-sm">
-                <span>
-                  {t("Cantidad")}: <b>{formatQty(l.qty)}</b>
-                </span>
-                <span>
-                  {t("Precio")}: <b>{formatEur(l.price)}</b>
-                </span>
-                {l.discount ? <span>{t("Dto %")}: {l.discount}</span> : null}
-                <span>
-                  {t("Importe")}: {formatEur(l.total)}
-                </span>
-              </div>
-              {(checking || l.received > 0) && (
-                <div className="mt-2 flex items-center gap-2 text-sm">
-                  <span>{t("Recibido")}:</span>
-                  <button type="button" className="rounded-lg bg-slate-100 px-3 py-1 font-bold" onClick={() => setReceived(l, l.received - 1)}>
-                    −
-                  </button>
-                  <b className="w-8 text-center">{l.received}</b>
-                  <button type="button" className="rounded-lg bg-slate-100 px-3 py-1 font-bold" onClick={() => setReceived(l, l.received + 1)}>
-                    +
-                  </button>
-                  {status === "missing" && <span className="font-semibold text-red-600">{t("Faltan")} {-diff}</span>}
-                  {status === "extra" && <span className="font-semibold text-amber-700">{t("Sobran")} {diff}</span>}
-                  {status === "ok" && <span className="font-semibold text-green-700">✓</span>}
+            <li key={l.id}>
+              <button
+                type="button"
+                className={`card block w-full p-3 text-left ${l.checkedAt ? (diff === 0 ? "bg-green-50 ring-2 ring-green-400" : "ring-2 ring-amber-400") : ""}`}
+                onClick={() => setOpen(l)}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-semibold">{l.description || "—"}</span>
+                  {l.checkedAt ? <span className="shrink-0 rounded-full bg-green-600 px-2 py-0.5 text-xs font-bold text-white">✓ {t("Comprobado")}</span> : null}
                 </div>
-              )}
+                <div className="font-mono text-xs text-slate-500">
+                  {l.ean || t("Sin código")} {l.ref && `· ${l.ref}`}
+                </div>
+                <div className="mt-1 flex flex-wrap gap-x-4 text-sm">
+                  <span>
+                    {t("Cantidad")}: <b>{formatQty(l.qty)}</b>
+                  </span>
+                  <span>
+                    {t("Precio")}: <b>{formatEur(l.price)}</b>
+                  </span>
+                  {l.discount ? (
+                    <span>
+                      {t("Dto %")}: {l.discount}
+                    </span>
+                  ) : null}
+                  <span>
+                    {t("Importe")}: {formatEur(l.total)}
+                  </span>
+                </div>
+                {l.checkedAt ? (
+                  <div className="mt-1 text-sm">
+                    {t("Recibido")}: <b>{formatQty(l.received)}</b>
+                    {diff < 0 && <span className="ml-2 font-semibold text-red-600">{t("Faltan")} {formatQty(-diff)}</span>}
+                    {diff > 0 && <span className="ml-2 font-semibold text-amber-700">{t("Sobran")} {formatQty(diff)}</span>}
+                  </div>
+                ) : null}
+              </button>
             </li>
           );
         })}
@@ -110,13 +181,26 @@ export default function DocDetailPage() {
         type="button"
         className="btn-danger w-full"
         onClick={async () => {
-          if (!confirm(t("¿Borrar este albarán?"))) return;
+          if (!window.confirm(t("¿Borrar este albarán?"))) return;
           await deleteDocument(doc.id);
           navigate("/albaranes", { replace: true });
         }}
       >
         {t("Borrar")}
       </button>
+
+      {open && (
+        <CheckSheet
+          key={open.id}
+          line={open}
+          onClose={() => setOpen(null)}
+          onConfirm={(n) => confirmLine(open, n)}
+          onUncheck={async () => {
+            await checkLine(open.id, null);
+            setOpen(null);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -47,6 +47,7 @@ type RemoteLine = {
   discount: number | null;
   total: number | null;
   received: number;
+  checked_at: number | null;
   deleted: boolean;
   updated_at?: string;
 };
@@ -92,6 +93,7 @@ export const lineToRemote = (l: DocLine): RemoteLine => ({
   discount: l.discount,
   total: l.total,
   received: l.received,
+  checked_at: l.checkedAt ?? null,
   deleted: false,
 });
 
@@ -108,6 +110,7 @@ export const lineFromRemote = (r: RemoteLine): DocLine => ({
   discount: num(r.discount),
   total: num(r.total),
   received: Number(r.received ?? 0),
+  checkedAt: r.checked_at == null ? null : Number(r.checked_at),
   dirty: 0,
 });
 

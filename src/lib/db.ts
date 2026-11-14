@@ -37,6 +37,8 @@ export interface DocLine {
   total: number | null;
   /** Unidades comprobadas al recibir la mercancía (对货) */
   received: number;
+  /** Momento en que se dio por comprobada (对过了); null/undefined = sin comprobar */
+  checkedAt?: number | null;
   dirty?: number;
   rev?: number;
 }
@@ -94,7 +96,7 @@ export const uuid = () =>
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
-export type NewLine = Omit<DocLine, "id" | "docId" | "pos" | "key" | "received">;
+export type NewLine = Omit<DocLine, "id" | "docId" | "pos" | "key" | "received" | "checkedAt">;
 
 export async function saveDocument(doc: Omit<DeliveryDoc, "id" | "createdAt" | "lineCount" | "total">, lines: NewLine[]): Promise<string> {
   const id = uuid();
@@ -102,7 +104,7 @@ export async function saveDocument(doc: Omit<DeliveryDoc, "id" | "createdAt" | "
   await db.transaction("rw", db.docs, db.lines, async () => {
     await db.docs.add({ ...doc, id, createdAt: Date.now(), lineCount: lines.length, total: Math.round(total * 100) / 100, ...touched() });
     await db.lines.bulkAdd(
-      lines.map((l, pos) => ({ ...l, id: uuid(), docId: id, pos, key: l.ean ? barcodeKey(l.ean) : "", received: 0, ...touched() })),
+      lines.map((l, pos) => ({ ...l, id: uuid(), docId: id, pos, key: l.ean ? barcodeKey(l.ean) : "", received: 0, checkedAt: null, ...touched() })),
     );
   });
   notifyLocalChange();
@@ -119,16 +121,56 @@ export async function deleteDocument(id: string): Promise<void> {
   notifyLocalChange();
 }
 
-/** Cambia las unidades recibidas de una línea (modo 对货). Devuelve el nuevo valor. */
-export async function changeReceived(lineId: string, delta: number | { set: number }): Promise<number> {
-  const value = await db.transaction("rw", db.lines, async () => {
-    const cur = (await db.lines.get(lineId))?.received ?? 0;
-    const next = Math.max(0, typeof delta === "number" ? cur + delta : delta.set);
-    await db.lines.update(lineId, { received: next, ...touched() });
-    return next;
+/** 对货: guarda la cantidad que ha llegado y marca la línea como comprobada (o la desmarca con null). */
+export async function checkLine(lineId: string, received: number | null): Promise<void> {
+  await db.lines.update(lineId, {
+    received: received == null ? 0 : Math.max(0, received),
+    checkedAt: received == null ? null : Date.now(),
+    ...touched(),
   });
   notifyLocalChange();
-  return value;
+}
+
+/** Línea editada: con id si ya existía en el albarán. */
+export type EditedLine = NewLine & { id?: string };
+
+/**
+ * Editar un albarán ya guardado: actualiza las líneas que siguen (conservando lo
+ * comprobado en 对货), añade las nuevas y borra las quitadas.
+ */
+export async function updateDocument(
+  id: string,
+  meta: Pick<DeliveryDoc, "supplier" | "number" | "date">,
+  lines: EditedLine[],
+): Promise<void> {
+  await db.transaction("rw", [db.docs, db.lines, db.tombstones], async () => {
+    const existing = await db.lines.where("docId").equals(id).toArray();
+    const byId = new Map(existing.map((l) => [l.id, l]));
+    const keep = new Set<string>();
+    const rows: DocLine[] = lines.map((l, pos) => {
+      const prev = l.id ? byId.get(l.id) : undefined;
+      if (prev) keep.add(prev.id);
+      const { id: _id, ...data } = l;
+      void _id;
+      return {
+        ...data,
+        id: prev?.id ?? uuid(),
+        docId: id,
+        pos,
+        key: l.ean ? barcodeKey(l.ean) : "",
+        received: prev?.received ?? 0,
+        checkedAt: prev?.checkedAt ?? null,
+        ...touched(),
+      };
+    });
+    const removed = existing.filter((l) => !keep.has(l.id)).map((l) => l.id);
+    await db.tombstones.bulkPut(removed.map((l) => ({ id: l, table: "lines" as const })));
+    await db.lines.bulkDelete(removed);
+    await db.lines.bulkPut(rows);
+    const total = rows.reduce((s, l) => s + (l.total ?? 0), 0);
+    await db.docs.update(id, { ...meta, lineCount: rows.length, total: Math.round(total * 100) / 100, ...touched() });
+  });
+  notifyLocalChange();
 }
 
 export interface LineWithDoc extends DocLine {

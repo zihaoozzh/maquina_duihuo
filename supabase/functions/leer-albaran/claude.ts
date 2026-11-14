@@ -1,29 +1,28 @@
 /** Lectura con Claude (Anthropic). */
 import type Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { AlbaranSchema, ReadError, SYSTEM, userPrompt, type Albaran, type PageImage } from "./shared.ts";
+import { AlbaranSchema, ReadError, SYSTEM, textPrompt, userPrompt, type Albaran, type AlbaranInput } from "./shared.ts";
 
 export const CLAUDE_MODEL = "claude-opus-5-5";
 
-export async function extractWithClaude(client: Anthropic, images: PageImage[]): Promise<Albaran> {
+export async function extractWithClaude(client: Anthropic, input: AlbaranInput): Promise<Albaran> {
+  const content: Anthropic.Beta.BetaContentBlockParam[] =
+    "text" in input
+      ? [{ type: "text", text: textPrompt(input.text) }]
+      : [
+          ...input.images.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.media_type, data: img.data },
+          })),
+          { type: "text" as const, text: userPrompt(input.images.length) },
+        ];
   const response = await client.beta.messages.parse({
     model: CLAUDE_MODEL,
     max_tokens: 16000,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     system: SYSTEM,
-    messages: [
-      {
-        role: "user",
-        content: [
-          ...images.map((img) => ({
-            type: "image" as const,
-            source: { type: "base64" as const, media_type: img.media_type, data: img.data },
-          })),
-          { type: "text", text: userPrompt(images.length) },
-        ],
-      },
-    ],
+    messages: [{ role: "user", content }],
     output_config: { format: betaZodOutputFormat(AlbaranSchema) },
   });
 

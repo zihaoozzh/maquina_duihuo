@@ -13,10 +13,8 @@ export default function ProductInfo({ code }: { code: string }) {
 
   const latest = lines[0];
   const name = product?.name || latest?.description || "";
-  // Coste neto por unidad: si hay descuento, importe / cantidad
-  const netCost =
-    latest?.total != null && latest.qty ? latest.total / latest.qty : latest?.price != null ? latest.price * (1 - (latest.discount ?? 0) / 100) : null;
-  const lastCost = netCost ?? product?.cost ?? null;
+  // La tienda trabaja con el precio unitario tal cual (sin restar el descuento)
+  const lastCost = latest?.price ?? product?.cost ?? null;
   const margin = product?.pvp && lastCost ? ((product.pvp / 1.21 - lastCost) / lastCost) * 100 : null;
 
   return (

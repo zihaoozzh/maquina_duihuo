@@ -19,7 +19,7 @@ const good = {
 
 Deno.test("lee la respuesta JSON y envía imagen, instrucciones y esquema", async () => {
   const seen: Record<string, any>[] = [];
-  const out = await extractWithGemini(fakeAi({ text: JSON.stringify(good), candidates: [{ finishReason: "STOP" }] }, seen), [page], "m");
+  const out = await extractWithGemini(fakeAi({ text: JSON.stringify(good), candidates: [{ finishReason: "STOP" }] }, seen), { images: [page] }, "m");
   assertEquals(out, good);
   const req = seen[0];
   assertEquals(req.model, "m");
@@ -29,10 +29,19 @@ Deno.test("lee la respuesta JSON y envía imagen, instrucciones y esquema", asyn
 });
 
 Deno.test("rechaza JSON que no cumple el esquema", async () => {
-  await assertRejects(() => extractWithGemini(fakeAi({ text: '{"lines": "x"}' }), [page]), ReadError);
+  await assertRejects(() => extractWithGemini(fakeAi({ text: '{"lines": "x"}' }), { images: [page] }), ReadError);
 });
 
 Deno.test("documento bloqueado o demasiado largo", async () => {
-  await assertRejects(() => extractWithGemini(fakeAi({ promptFeedback: { blockReason: "OTHER" } }), [page]), ReadError, "no ha podido");
-  await assertRejects(() => extractWithGemini(fakeAi({ text: "{", candidates: [{ finishReason: "MAX_TOKENS" }] }), [page]), ReadError, "demasiado largo");
+  await assertRejects(() => extractWithGemini(fakeAi({ promptFeedback: { blockReason: "OTHER" } }), { images: [page] }), ReadError, "no ha podido");
+  await assertRejects(() => extractWithGemini(fakeAi({ text: "{", candidates: [{ finishReason: "MAX_TOKENS" }] }), { images: [page] }), ReadError, "demasiado largo");
+});
+
+Deno.test("modo texto (PDF/Excel): manda el texto, sin imágenes", async () => {
+  const seen: Record<string, any>[] = [];
+  await extractWithGemini(fakeAi({ text: JSON.stringify(good) }, seen), { text: "Código | Descripción | Cant.\n8410076472519 | TAZA | 12" }, "m");
+  const parts = seen[0].contents[0].parts;
+  assertEquals(parts.length, 1);
+  assertEquals(parts[0].text.includes("8410076472519 | TAZA | 12"), true);
+  assertEquals(parts[0].text.includes("<documento>"), true);
 });

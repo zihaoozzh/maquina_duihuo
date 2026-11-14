@@ -110,16 +110,16 @@ export function aiAvailable(): boolean {
   return isReady();
 }
 
-export async function readWithAi(pages: PageImage[]): Promise<ParsedDocument> {
+async function callAi(body: { images: PageImage[] } | { text: string }): Promise<ParsedDocument> {
   const sb = getClient();
   if (!sb || !isReady()) throw new AiNotAvailable("Para leer fotos con IA, conecta la base de datos en Ajustes.");
-  const { data, error } = await sb.functions.invoke<AiAlbaran>("leer-albaran", { body: { images: pages } });
+  const { data, error } = await sb.functions.invoke<AiAlbaran>("leer-albaran", { body });
   if (error) {
     // El mensaje de error de la función viene en el cuerpo de la respuesta
     let message = error.message;
     try {
-      const body = await (error as { context?: Response }).context?.json();
-      if (body?.error) message = body.error;
+      const resBody = await (error as { context?: Response }).context?.json();
+      if (resBody?.error) message = resBody.error;
     } catch {
       /* sin cuerpo */
     }
@@ -133,4 +133,14 @@ export async function readWithAi(pages: PageImage[]): Promise<ParsedDocument> {
     date: /^\d{4}-\d{2}-\d{2}$/.test(data.date ?? "") ? data.date : "",
     mode: "heuristic",
   };
+}
+
+/** Fotos o páginas escaneadas */
+export function readWithAi(pages: PageImage[]): Promise<ParsedDocument> {
+  return callAi({ images: pages });
+}
+
+/** Texto ya extraído de un PDF o Excel (mucho más barato que mandar imágenes) */
+export function readTextWithAi(text: string): Promise<ParsedDocument> {
+  return callAi({ text: text.slice(0, 200_000) });
 }

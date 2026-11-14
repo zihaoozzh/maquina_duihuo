@@ -53,7 +53,7 @@ const fakeClient = { from: (t: string) => new Query(t) };
 
 vi.mock("./cloud", () => ({ getClient: () => fakeClient, isReady: () => true, subscribeCloud: () => () => {} }));
 
-const { db, saveDocument, deleteDocument, changeReceived, replaceCatalog } = await import("./db");
+const { db, saveDocument, deleteDocument, checkLine, updateDocument, replaceCatalog } = await import("./db");
 const { syncNow } = await import("./sync");
 
 /** Simula "otro móvil": borra la base de datos local */
@@ -86,15 +86,39 @@ describe("sincronización", () => {
     const id = await saveDocument({ supplier: "P", number: "", date: "", fileName: "", source: "manual" }, [line("96385074", 5, 1)]);
     await syncNow();
     const [l] = await db.lines.toArray();
-    await changeReceived(l.id, 3);
+    await checkLine(l.id, 3);
     await syncNow();
     expect(T("lines").get(l.id)).toMatchObject({ received: 3 });
+    expect(typeof T("lines").get(l.id)!.checked_at).toBe("number");
 
     await deleteDocument(id);
     await syncNow();
     expect(T("docs").get(id)).toMatchObject({ deleted: true });
     expect(T("lines").get(l.id)).toMatchObject({ deleted: true });
     expect(await db.tombstones.count()).toBe(0);
+  });
+
+  it("editar un albarán guardado conserva lo comprobado y sincroniza lo quitado", async () => {
+    const id = await saveDocument({ supplier: "P", number: "", date: "", fileName: "", source: "manual" }, [
+      line("96385074", 5, 1),
+      line("8410076472519", 2, 3),
+    ]);
+    await syncNow();
+    const [a, b] = await db.lines.where("docId").equals(id).sortBy("pos");
+    await checkLine(a.id, 5);
+    await updateDocument(id, { supplier: "Nuevo", number: "N1", date: "2026-11-14" }, [
+      { id: a.id, ean: "96385074", ref: "", description: "Cambiado", qty: 6, price: 1, discount: null, total: 6 },
+      { ean: "4006381333931", ref: "", description: "Nueva", qty: 1, price: 2, discount: null, total: 2 },
+    ]);
+    const lines = await db.lines.where("docId").equals(id).sortBy("pos");
+    expect(lines.map((l) => l.description)).toEqual(["Cambiado", "Nueva"]);
+    expect(lines[0]).toMatchObject({ id: a.id, received: 5, qty: 6 });
+    expect(lines[0].checkedAt).toBeTypeOf("number");
+    expect(await db.docs.get(id)).toMatchObject({ supplier: "Nuevo", lineCount: 2, total: 8 });
+    await syncNow();
+    expect(T("lines").get(b.id)).toMatchObject({ deleted: true });
+    expect(T("lines").get(a.id)).toMatchObject({ description: "Cambiado", received: 5 });
+    expect(T("docs").get(id)).toMatchObject({ supplier: "Nuevo", line_count: 2 });
   });
 
   it("un cambio local sin subir no se pisa con lo que baja", async () => {

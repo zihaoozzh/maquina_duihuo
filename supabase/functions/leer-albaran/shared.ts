@@ -38,7 +38,8 @@ Reglas:
 - Si una descripción ocupa dos renglones, únelos en una sola línea.
 - No incluyas como líneas de producto los totales, bases imponibles, IVA, portes ni subtotales.
 - Si el documento tiene varias páginas, júntalas todas en la misma lista.
-- Si un dato no se lee, déjalo vacío o null y marca la línea como dudosa. Es mejor dudar que adivinar.`;
+- Si un dato no se lee, déjalo vacío o null y marca la línea como dudosa. Es mejor dudar que adivinar.
+- Muchos números del documento NO son de productos: IBAN y cuentas bancarias, teléfonos, CIF/NIF, códigos postales, números de cliente, de pedido o de albarán, fechas, totales e impuestos. No los uses como cantidades, precios ni códigos de barras.`;
 
 export class ReadError extends Error {
   constructor(
@@ -49,5 +50,15 @@ export class ReadError extends Error {
   }
 }
 
+/** Lo que se lee: fotos/páginas escaneadas, o el texto ya extraído de un PDF o Excel. */
+export type AlbaranInput = { images: PageImage[] } | { text: string };
+
 export const userPrompt = (pages: number) =>
   `Transcribe las líneas de producto de este documento (${pages} página${pages === 1 ? "" : "s"}).`;
+
+export const textPrompt = (text: string) =>
+  `Este es el texto extraído de un albarán o factura en PDF o Excel. Cada renglón es una fila del documento y las celdas están separadas por " | ". Transcribe sus líneas de producto.
+
+<documento>
+${text}
+</documento>`;

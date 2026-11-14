@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guessNumbers, parseDocument, parseRows, type Row } from "./parse";
+import { guessNumbers, parseDocument, parseRows, rowsToText, type Row } from "./parse";
 import { parseNumber } from "./num";
 import { barcodeKey, isGtinChecksumValid } from "./ean";
 
@@ -98,5 +98,25 @@ describe("Excel (columnas por índice)", () => {
       ["6901234567892", "毛巾", "10", "1.5", "15"].map((text, i) => ({ text, x0: i, x1: i + 1 })),
     ];
     expect(parseRows(rows)[0]).toMatchObject({ ean: "6901234567892", description: "毛巾", qty: 10, price: 1.5, total: 15 });
+  });
+});
+
+describe("filas de banco", () => {
+  it("no confunde el IBAN ni la cuenta con productos", () => {
+    const rows: Row[] = [
+      row(["Código", 40], ["Descripción", 180], ["Cant.", 380], ["Precio", 430], ["Importe", 520]),
+      row(["8410076472519", 40], ["TAZA", 180], ["12", 390], ["1,25", 435], ["15,00", 525]),
+      row(["IBAN: ES91 2100 0418 4502 0005 1332", 40]),
+      row(["Banco Santander cuenta 0049 1500 0512 3456 7890", 40], ["1", 390], ["2", 435], ["2", 525]),
+      row(["96385074", 40], ["BANCO MADERA JARDIN", 180], ["2", 390], ["19,90", 435], ["39,80", 525]),
+    ];
+    const lines = parseRows(rows);
+    expect(lines.map((l) => l.description)).toEqual(["TAZA", "BANCO MADERA JARDIN"]);
+  });
+});
+
+describe("rowsToText", () => {
+  it("una fila por renglón y celdas con |", () => {
+    expect(rowsToText([row(["A", 0], ["1,5", 50]), [], row(["B", 0])])).toBe("A | 1,5\nB");
   });
 });
