@@ -47,7 +47,7 @@ export default function SettingsPage() {
       <div className="card space-y-3">
         <h2 className="text-lg font-bold">{t("Base de datos compartida")}</h2>
         <p className="text-sm text-slate-600">
-          {t("Con ella todos los móviles de la tienda ven los mismos albaranes, y se pueden leer fotos con IA.")}
+          {t("Con ella todos los móviles de la tienda ven los mismos albaranes.")}
         </p>
 
         {!config && (

@@ -1,6 +1,0 @@
-# Configuración mínima para `supabase functions deploy`.
-project_id = "maquina_duihuo"
-
-[functions.leer-albaran]
-# La función comprueba ella misma que la sesión es de un usuario de la tienda.
-verify_jwt = true

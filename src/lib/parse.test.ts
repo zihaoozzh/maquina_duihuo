@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guessNumbers, parseDocument, parseRows, rowsToText, type Row } from "./parse";
+import { guessNumbers, parseDocument, parseRows, type Row } from "./parse";
 import { parseNumber } from "./num";
 import { barcodeKey, isGtinChecksumValid } from "./ean";
 
@@ -115,8 +115,3 @@ describe("filas de banco", () => {
   });
 });
 
-describe("rowsToText", () => {
-  it("una fila por renglón y celdas con |", () => {
-    expect(rowsToText([row(["A", 0], ["1,5", 50]), [], row(["B", 0])])).toBe("A | 1,5\nB");
-  });
-});

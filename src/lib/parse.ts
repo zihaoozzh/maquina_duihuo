@@ -454,10 +454,3 @@ export function parseDocument(rows: Row[]): ParsedDocument {
   };
 }
 
-/** Texto plano del documento para la IA: una fila por renglón, celdas separadas por " | ". */
-export function rowsToText(rows: Row[]): string {
-  return rows
-    .map((r) => r.map((c) => c.text.trim()).filter(Boolean).join(" | "))
-    .filter(Boolean)
-    .join("\n");
-}

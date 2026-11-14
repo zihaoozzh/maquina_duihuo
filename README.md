@@ -5,14 +5,15 @@ cantidades y precios**, y luego se escanea el producto con el móvil para ver su
 
 ## Qué hace
 
-- **Subir albarán**: PDF con texto o Excel/CSV (se leen **sin IA**, con reglas que detectan
-  las columnas y comprueban que cantidad × precio = importe). **Fotos y PDF escaneados se leen
-  con IA (Gemini o Claude)**, a través de una función del servidor que guarda la clave.
+- **Subir albarán**: PDF con texto o Excel/CSV, leídos al instante y sin conexión con reglas que
+  detectan las columnas, comprueban que cantidad × precio = importe y descartan filas de IBAN o
+  cuenta bancaria. Fotos y PDF escaneados no se leen solos: las líneas se escriben a mano.
+- **Editar** un albarán ya guardado (datos y líneas).
 - **Revisar antes de guardar**: cada línea se puede corregir; las dudosas salen en amarillo.
 - **Escanear**: con la cámara (o escribiendo el código) se ve el PVP y el stock de la caja,
   el último coste y todas las veces que el producto aparece en albaranes.
-- **Comprobar mercancía (对货)**: dentro de un albarán, escaneando lo que llega se cuentan las
-  unidades recibidas y se ve qué falta o sobra.
+- **Comprobar mercancía (对货)**: dentro de un albarán, al escanear un producto sale con su precio,
+  se escribe cuántas han llegado y queda «✓ 已对» (con 缺/多 si no coincide).
 - **Productos de la caja**: se importa el Excel exportado de **Bohao Market**.
 - Español / 中文.
 
@@ -20,31 +21,19 @@ cantidades y precios**, y luego se escanea el producto con el móvil para ver su
   albaranes, productos y recuentos. La app sigue funcionando sin cobertura: guarda en el móvil y
   sube los cambios cuando vuelve la conexión.
 
-## Puesta en marcha de la base de datos y la IA (una sola vez)
+## Puesta en marcha de la base de datos (una sola vez)
 
 1. Crea un proyecto gratuito en [supabase.com](https://supabase.com) (región: Europa).
-2. **SQL Editor** → pega y ejecuta `supabase/migrations/20261113000000_init.sql`.
+2. **SQL Editor** → pega y ejecuta, en orden, los archivos de `supabase/migrations/`.
 3. **Authentication → Sign In / Providers**: desactiva *Allow new users to sign up*.
    **Authentication → Users → Add user**: crea la cuenta de la tienda (email + contraseña).
-4. Función de la IA (necesita la [CLI de Supabase](https://supabase.com/docs/guides/cli)):
-   ```bash
-   supabase login
-   supabase link --project-ref TU_PROYECTO
-   supabase functions deploy leer-albaran
-   ```
-   Después pon la clave de la IA como secreto (Supabase → Edge Functions → Secrets), **una** de estas:
-   - `GEMINI_API_KEY`: clave de Google AI Studio. Opcional: `GEMINI_MODEL` (por defecto
-     `gemini-flash-latest`).
-   - `ANTHROPIC_API_KEY`: clave de [console.anthropic.com](https://console.anthropic.com) (usa Claude).
-   Si están las dos, se usa Gemini salvo que pongas `AI_PROVIDER=claude`. La clave solo vive en
-   Supabase, nunca en el móvil.
-5. En la app: **⚙ Ajustes** → «O escribe la dirección y la clave de Supabase» (Project Settings →
+4. En la app: **⚙ Ajustes** → «O escribe la dirección y la clave de Supabase» (Project Settings →
    API: *Project URL* y la clave *anon/publishable*) → entra con la cuenta de la tienda.
-6. Para el segundo móvil: en Ajustes, «Compartir enlace de la tienda», ábrelo allí y entra con la
+5. Para el segundo móvil: en Ajustes, «Compartir enlace de la tienda», ábrelo allí y entra con la
    misma cuenta.
 
 Seguridad: la clave *anon* es pública por diseño; los datos solo se pueden leer o escribir con la
-sesión de la cuenta de la tienda (políticas RLS), y la función de IA también lo comprueba.
+sesión de la cuenta de la tienda (políticas RLS).
 
 ## Desarrollo
 
@@ -55,10 +44,7 @@ npm test         # pruebas del lector de albaranes
 npm run build
 ```
 
-- Lectura sin IA: `src/lib/parse.ts` (pruebas en `src/lib/parse.test.ts`).
-- Lectura con IA: `supabase/functions/leer-albaran/` (servidor: `gemini.ts`, `claude.ts`,
-  `shared.ts` con el esquema y las instrucciones) y `src/lib/ai.ts` (móvil).
-  Pruebas del servidor: `deno test supabase/functions/leer-albaran/`.
+- Lectura de albaranes: `src/lib/parse.ts` (pruebas en `src/lib/parse.test.ts`).
 - Sincronización: `src/lib/sync.ts` (pruebas con un Supabase simulado en `src/lib/sync.test.ts`).
 
 Para que un proveedor nuevo se lea bien, lo mejor es añadir una prueba con sus filas.
