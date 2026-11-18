@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import LinesEditor, { emptyLine, fromEditable, toEditable, type EditableLine } from "../components/LinesEditor";
 import { parseDocument, type ParsedDocument } from "../lib/parse";
+import { formatEur, round } from "../lib/num";
 import { saveDocument, type DocSource } from "../lib/db";
 import { t } from "../lib/i18n";
 
@@ -15,11 +16,20 @@ function kindOf(file: File): DocSource {
   return "pdf";
 }
 
-const EMPTY: ParsedDocument = { lines: [], supplier: "", number: "", date: "", mode: "heuristic" };
+const EMPTY: ParsedDocument = { lines: [], supplier: "", number: "", date: "", mode: "heuristic", footerTotals: [], adjustments: 0, dropped: 0 };
 
 interface ReadResult {
   doc: ParsedDocument;
   notice: string;
+}
+
+/** Si la suma de las líneas (con los descuentos globales) coincide con un importe del pie del documento. */
+function checkTotals(doc: ParsedDocument): string {
+  if (doc.lines.length === 0 || doc.footerTotals.length === 0) return "";
+  const sum = round(doc.lines.reduce((s, l) => s + (l.total ?? 0), 0), 2);
+  const net = round(sum + doc.adjustments, 2);
+  const hit = doc.footerTotals.find((v) => Math.abs(v - net) <= 0.05 || Math.abs(v - sum) <= 0.05);
+  return hit === undefined ? "" : `✓ ${t("La suma de las líneas cuadra con el documento")}: ${formatEur(hit)}`;
 }
 
 const MANUAL = "No se puede leer automáticamente (foto o PDF escaneado). Añade las líneas a mano.";
@@ -41,7 +51,8 @@ async function readFiles(files: File[]): Promise<ReadResult> {
     if (pdf.scanned) return { doc: EMPTY, notice: t(MANUAL) };
     doc = parseDocument(pdf.rows);
   }
-  return { doc, notice: doc.lines.length ? "" : t("No se ha encontrado ninguna línea de producto.") };
+  const dropped = doc.dropped > 0 ? `${t("Filas sin código de barras descartadas (revísalas en el documento)")}: ${doc.dropped}` : "";
+  return { doc, notice: doc.lines.length ? dropped : t("No se ha encontrado ninguna línea de producto.") };
 }
 
 export default function UploadPage() {
@@ -51,6 +62,7 @@ export default function UploadPage() {
   const [step, setStep] = useState<Step>({ kind: "pick" });
   const [files, setFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
+  const [check, setCheck] = useState("");
   const [lines, setLines] = useState<EditableLine[]>([]);
   const [meta, setMeta] = useState({ supplier: "", number: "", date: "" });
   const [saving, setSaving] = useState(false);
@@ -63,6 +75,7 @@ export default function UploadPage() {
     try {
       const { doc, notice } = await readFiles(picked);
       setNotice(notice);
+      setCheck(checkTotals(doc));
       setLines(doc.lines.length ? doc.lines.map(toEditable) : [emptyLine()]);
       setMeta({ supplier: doc.supplier, number: doc.number, date: doc.date || new Date().toISOString().slice(0, 10) });
       setStep({ kind: "review" });
@@ -152,6 +165,7 @@ export default function UploadPage() {
         </div>
       </div>
       {notice && <p className="card text-amber-700">{notice}</p>}
+      {check && <p className="card font-semibold text-emerald-700">{check}</p>}
       <p className="text-sm font-semibold text-slate-600">
         {t("Revisa las líneas antes de guardar")} · {t("Toca una celda para corregirla")}
       </p>

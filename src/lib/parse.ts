@@ -11,7 +11,7 @@
  *  2. Siempre se comprueba la coherencia cantidad × precio ≈ importe. Si las columnas no
  *     cuadran (o no hay cabecera) se deducen los números por esa relación.
  */
-import { parseNumber, round } from "./num";
+import { parseDiscount, parseNumber, round } from "./num";
 import { cleanBarcode, looksLikeBarcode } from "./ean";
 
 export interface Cell {
@@ -23,7 +23,7 @@ export interface Cell {
 
 export type Row = Cell[];
 
-export type LineField = "ean" | "ref" | "description" | "qty" | "price" | "discount" | "total";
+export type LineField = "ean" | "ref" | "description" | "qty" | "price" | "discount" | "total" | "net";
 
 export interface ParsedLine {
   ean: string;
@@ -44,6 +44,12 @@ export interface ParsedDocument {
   date: string; // ISO yyyy-mm-dd o ""
   /** "header" si se encontró la cabecera de columnas, "heuristic" si se dedujo */
   mode: "header" | "heuristic";
+  /** Importes del pie del documento (base, total…), para comprobar la suma de líneas */
+  footerTotals: number[];
+  /** Descuentos globales / líneas negativas sin código de barras (no se guardan como producto) */
+  adjustments: number;
+  /** Filas sin código de barras que se han descartado por no parecer productos */
+  dropped: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -74,16 +80,18 @@ function kw(words: string[], score = 2): Matcher {
 }
 
 export const LINE_HEADER_MATCHERS: Record<LineField, Matcher[]> = {
-  ean: [kw(["cod. barras", "cod.barras", "codigo de barras", "codigo barras", "cod barras", "c.barras", "c. barras", "ean", "gtin", "barcode", "条码", "条形码"], 4)],
+  ean: [kw(["cod. barras", "cod.barras", "cod.barra", "cod barra", "codigo de barras", "codigo barras", "cod barras", "c.barras", "c. barras", "ean", "gtin", "barcode", "条码", "条形码"], 4)],
   ref: [kw(["referencia", "ref.", "ref", "codigo", "cod.", "cod", "货号", "编号", "款号", "item"], 2), kw(["articulo", "art."], 1)],
   description: [
     (h) => (/(^|[^a-z])(cod|codigo|ref)([^a-z]|$)/.test(h) ? 0 : kw(["descripcion", "concepto", "denominacion", "producto", "detalle", "品名", "名称", "商品", "description"], 3)(h)),
     kw(["articulo"], 1),
   ],
   qty: [kw(["cantidad", "cant.", "cant", "uds", "uds.", "unid", "unidades", "ud", "ud.", "qty", "quantity", "pcs", "数量", "件数"], 3)],
-  price: [kw(["precio", "p.unit", "p. unit", "pr.unit", "p/u", "unitario", "price", "单价", "价格"], 3)],
-  discount: [kw(["dto", "dto.", "descuento", "% desc", "desc.%", "desc %", "%dto", "折扣"], 3)],
-  total: [kw(["importe", "total", "neto", "subtotal", "amount", "金额", "合计"], 3)],
+  price: [(h) => (/[+]|(^|[^a-z])(dto|dt|iva|final|neto)([^a-z]|$)/.test(h) ? 0 : kw(["precio", "p.unit", "p. unit", "pr.unit", "p/u", "unitario", "price", "单价", "价格"], 3)(h))],
+  discount: [(h) => (/[+]/.test(h) ? 0 : kw(["dtos", "dto", "dto.", "descuento", "% desc", "desc.%", "desc %", "%dto", "折扣"], 3)(h))],
+  total: [(h) => (/[+]/.test(h) ? 0 : kw(["importe", "total", "neto", "subtotal", "amount", "金额", "合计"], 3)(h))],
+  // Precio ya con descuento (y a veces impuestos): "Precio+DTO", "Precio IVA+DT", "Pre.F"…
+  net: [kw(["precio+dto", "precio + dto", "precio dto", "precio iva+dt", "iva+dt", "pre.f", "precio final", "precio neto"], 4)],
 };
 
 /** Puntúa una celda de cabecera contra cada campo. */
@@ -298,6 +306,21 @@ function splitTokens(row: Row): Cell[] {
   return out;
 }
 
+/** Código de barras partido en trozos por un espacio ("84357306305 00"): une números seguidos. */
+function findSplitBarcode(tokens: Cell[]): { code: string; used: string[] } | null {
+  for (let i = 0; i < tokens.length; i++) {
+    if (!/^\d+$/.test(tokens[i].text)) continue;
+    let code = "";
+    const used: string[] = [];
+    for (let j = i; j < tokens.length && /^\d+$/.test(tokens[j].text) && code.length < 14; j++) {
+      code += tokens[j].text;
+      used.push(tokens[j].text);
+      if (used.length > 1 && code.length >= 8 && looksLikeBarcode(code)) return { code, used };
+    }
+  }
+  return null;
+}
+
 function finishLine(fields: Partial<Record<LineField, string>>, fallbackTokens: Cell[]): ParsedLine | null {
   const warnings: string[] = [];
   let ean = cleanBarcode(fields.ean ?? "");
@@ -311,6 +334,13 @@ function finishLine(fields: Partial<Record<LineField, string>>, fallbackTokens: 
       ean = cleanBarcode(fromOther.text);
       if (ref === fromOther.text) ref = "";
       description = description.replace(fromOther.text, "").trim();
+    } else if (findSplitBarcode(fallbackTokens)) {
+      const split = findSplitBarcode(fallbackTokens)!;
+      ean = split.code;
+      // lo que sobra de la celda del código (p.ej. una referencia pegada) pasa a ser la referencia
+      const leftover = (fields.ean ?? "").split(/\s+/).filter((w) => w && !split.used.includes(w)).join(" ");
+      if (leftover && !ref) ref = leftover;
+      description = description.replace(split.used.join(" "), "").trim();
     } else if (ean && !/^\d{6,14}$/.test(ean)) {
       // no es un código numérico: probablemente es la referencia
       if (!ref) ref = ean;
@@ -320,13 +350,18 @@ function finishLine(fields: Partial<Record<LineField, string>>, fallbackTokens: 
 
   let qty = parseNumber(fields.qty);
   let price = parseNumber(fields.price);
-  let discount = parseNumber(fields.discount);
+  let discount = parseDiscount(fields.discount);
   let total = parseNumber(fields.total);
+  // Si el documento no trae columna de importe pero sí "Precio+DTO", el importe es cantidad × ese precio
+  const net = parseNumber(fields.net);
+  const totalFromNet = total == null && net != null && qty != null;
+  if (totalFromNet) total = round(qty! * net!, 2);
 
   const consistent = (q: number | null, p: number | null, d: number | null, t: number | null) =>
     q != null && p != null && t != null && close(q * p * (1 - (d ?? 0) / 100), t);
 
-  if (!consistent(qty, price, discount, total)) {
+  const netMatchesTotal = net != null && qty != null && total != null && close(qty * net, total);
+  if (!totalFromNet && !netMatchesTotal && !consistent(qty, price, discount, total)) {
     // Recoger todos los números de la fila (salvo códigos) y deducir
     const nums = fallbackTokens
       .map((t) => t.text)
@@ -347,6 +382,12 @@ function finishLine(fields: Partial<Record<LineField, string>>, fallbackTokens: 
     }
   }
 
+  // Si la cantidad no salió de su columna (quedó pegada al final de la descripción por falta de
+  // hueco: "… 110cm 12"), se quita de la descripción.
+  if (qty != null && parseNumber(fields.qty) == null && description.endsWith(` ${qty}`)) {
+    description = description.slice(0, -String(qty).length).trim();
+  }
+
   if (qty == null && price != null && total != null && price !== 0) {
     const q = total / price;
     if (Math.abs(q - Math.round(q)) < 0.01) qty = Math.round(q);
@@ -365,9 +406,31 @@ function finishLine(fields: Partial<Record<LineField, string>>, fallbackTokens: 
 }
 
 export function parseRows(rows: Row[]): ParsedLine[] {
-  const header = findHeader(rows, LINE_HEADER_MATCHERS, { minFields: 3, required: ["qty", "price", "total"] });
+  return parseRowsDetailed(rows).lines;
+}
+
+/**
+ * Como `parseRows`, y además devuelve los ajustes (descuentos globales, líneas con importe
+ * negativo y sin código de barras) que no se guardan como producto pero cuentan en el total.
+ */
+export function parseRowsDetailed(rows: Row[]): { lines: ParsedLine[]; adjustments: number; dropped: number } {
+  const header = findHeader<LineField>(rows, LINE_HEADER_MATCHERS, { minFields: 3, required: ["qty", "price", "total"] });
+  // "Artículo" como única columna de texto es la descripción; si además hay "Descripción", es la referencia/código
+  if (header && header.columns.ref && !header.columns.description && /^art/.test(normalizeText(header.columns.ref.text))) {
+    header.columns.description = header.columns.ref;
+    delete header.columns.ref;
+  }
   const lines: ParsedLine[] = [];
   const start = header ? header.rowIndex + 1 : 0;
+  // Las columnas de la cabecera que no nos interesan (U/B, %IVA, Caja…) también reciben sus
+  // celdas, para que no se mezclen con la columna reconocida más cercana.
+  const columnsWithSinks: Partial<Record<LineField | `x${number}`, Cell>> = { ...(header?.columns ?? {}) };
+  if (header) {
+    const known = new Set(Object.values(header.columns));
+    rows[header.rowIndex].forEach((c, i) => {
+      if (!known.has(c)) columnsWithSinks[`x${i}`] = c;
+    });
+  }
   let last: ParsedLine | null = null;
 
   for (let r = start; r < rows.length; r++) {
@@ -392,7 +455,7 @@ export function parseRows(rows: Row[]): ParsedLine[] {
     const hasNumber = tokens.some((t) => parseNumber(t.text) != null);
     let fields: Partial<Record<LineField, string>>;
     if (header) {
-      fields = assignCells(row, header.columns);
+      fields = assignCells<LineField | `x${number}`>(row, columnsWithSinks) as Partial<Record<LineField, string>>;
     } else {
       // Sin cabecera: el texto no numérico es la descripción
       const textTokens = tokens.filter((t) => parseNumber(t.text) == null && !looksLikeBarcode(t.text));
@@ -409,14 +472,24 @@ export function parseRows(rows: Row[]): ParsedLine[] {
     if (line) {
       lines.push(line);
       last = line;
-    } else if (last && !hasNumber && fields.description && text.length < 80) {
+    } else if (last && !hasNumber && (fields.description || fields.ref) && text.length < 80 && /[a-záéíóúñ]{3,}/i.test(text) && !/albar[aá]n|factura|pedido|fecha|p[aá]gina|\d+\s+de\s+\d+/i.test(text)) {
       // Continuación de la descripción en la línea de abajo
       last.description = `${last.description} ${text}`.trim();
     } else {
       last = null;
     }
   }
-  return lines;
+  // Si casi todas las líneas tienen código de barras válido, las que no lo tienen no son
+  // productos (teléfonos, cuentas, descuentos globales, pies de página…).
+  const withEan = lines.filter((l) => looksLikeBarcode(l.ean));
+  const rest = lines.filter((l) => !looksLikeBarcode(l.ean));
+  const named = rest.filter((l) => l.description);
+  if (withEan.length >= 2 && withEan.length >= (withEan.length + named.length) * 0.6) {
+    const adjustments = rest.filter((l) => l.total != null && l.total < 0).reduce((sum, l) => sum + (l.total ?? 0), 0);
+    const dropped = named.filter((l) => !(l.total != null && l.total < 0)).length;
+    return { lines: withEan, adjustments: round(adjustments, 2), dropped };
+  }
+  return { lines, adjustments: 0, dropped: 0 };
 }
 
 // ---------------------------------------------------------------------------
@@ -436,21 +509,92 @@ export function findDate(text: string): string {
 }
 
 export function findDocNumber(text: string): string {
-  const m = /(albar[aá]n|factura|n[ºo°]\s*(de)?\s*(albar[aá]n|factura|documento|doc\.?)|documento|pedido)\s*(n[ºo°.]*|num\.?|número|numero)?\s*[:#]?\s*([A-Z0-9][A-Z0-9/-]{2,})/i.exec(text);
-  return m?.[5] ?? "";
+  const re = /(albar[aá]n|factura|n[ºo°]\s*(de)?\s*(albar[aá]n|factura|documento|doc\.?)|documento|pedido)\s*(n[ºo°.]*|num\.?|número|numero)?\s*[:#]?\s*([A-Z0-9][A-Z0-9/-]{2,})/gi;
+  for (const m of text.matchAll(re)) if (/\d/.test(m[5])) return m[5];
+  return "";
+}
+
+const COMPANY_RE = /\b(S\.?\s?L\.?\s?U?|S\.?\s?A\.?\s?U?|S\.?\s?L\.?\s?L|S\.?\s?C\.?|C\.?\s?B\.?)\.?(?=\s|,|$)/i;
+const DOC_TITLE_RE = /^(factura|albaran|albarán|pedido|presupuesto|duplicado|original|hoja)\b/i;
+
+/** Proveedor: primera celda con forma de empresa (S.L., S.A.…); si no hay, la primera que no sea el título. */
+export function findSupplier(rows: Row[]): string {
+  const cells = rows.slice(0, 25).flat().map((c) => c.text.trim()).filter((t) => /[a-zA-Z]{3,}/.test(t));
+  const company = cells.find((t) => COMPANY_RE.test(t) && t.length <= 80 && !/^[\d\s]+$/.test(t));
+  if (company) {
+    const m = COMPANY_RE.exec(company);
+    return company.slice(0, m ? m.index + m[0].length : 60).trim().replace(/[,;]$/, "");
+  }
+  return (cells.find((t) => !DOC_TITLE_RE.test(t)) ?? "").slice(0, 60);
+}
+
+/** Número del documento: el que está bajo la cabecera "Factura / Fecha / Cliente" o "Nº de documento". */
+export function findNumberUnderHeader(rows: Row[]): string {
+  const label = /^(factura|albaran|pedido|presupuesto|n[ºo°.]? ?(de )?(factura|albaran|pedido|documento|doc\.?))$/;
+  for (let r = 0; r < rows.length - 1; r++) {
+    const heads = rows[r].filter((c) => label.test(normalizeText(c.text)));
+    if (heads.length === 0 || !rows[r].some((c) => /^fecha/.test(normalizeText(c.text)))) continue;
+    for (const h of heads) {
+      const hc = (h.x0 + h.x1) / 2;
+      for (let j = r + 1; j <= r + 4 && j < rows.length; j++) {
+        let best: Cell | null = null;
+        let bd = Infinity;
+        for (const c of rows[j]) {
+          if (!/^(?=.*\d)[A-Z0-9][\w/.-]{3,}$/i.test(c.text) || DATE_RE.test(c.text)) continue;
+          const d = Math.abs((c.x0 + c.x1) / 2 - hc);
+          if (d < bd) {
+            bd = d;
+            best = c;
+          }
+        }
+        if (best && bd <= Math.max(h.x1 - h.x0, best.x1 - best.x0) * 1.5 + 1) return best.text;
+      }
+    }
+  }
+  return "";
+}
+
+/** Importes del pie del documento (base, total…) para comprobar que la suma de líneas cuadra. */
+export function findFooterTotals(rows: Row[], fromRow: number): number[] {
+  const out = new Set<number>();
+  for (let r = fromRow; r < rows.length; r++) {
+    const text = rowText(rows[r]);
+    if (isBankRow(text)) continue;
+    for (const c of rows[r]) {
+      if (/%/.test(c.text)) continue;
+      for (const tok of c.text.split(/\s+/)) {
+        const n = /\d[.,]\d{2}$/.test(tok) ? parseNumber(tok.replace(/[()]/g, "")) : null;
+        if (n != null && n > 0) out.add(round(n, 2));
+      }
+    }
+  }
+  return [...out];
 }
 
 export function parseDocument(rows: Row[]): ParsedDocument {
-  const lines = parseRows(rows);
-  const header = findHeader(rows, LINE_HEADER_MATCHERS, { minFields: 3, required: ["qty", "price", "total"] });
+  const { lines, adjustments, dropped } = parseRowsDetailed(rows);
+  const header = findHeader<LineField>(rows, LINE_HEADER_MATCHERS, { minFields: 3, required: ["qty", "price", "total"] });
   const allText = rows.map(rowText).join("\n");
-  const firstText = rows.map(rowText).find((t) => t && /[a-z]{3,}/i.test(t)) ?? "";
+  // El pie del documento empieza después de la fila de la última línea de producto
+  let lastLineRow = header?.rowIndex ?? 0;
+  const lastEan = lines.length ? lines[lines.length - 1].ean : "";
+  if (lastEan) {
+    for (let r = rows.length - 1; r >= 0; r--) {
+      if (rowText(rows[r]).replace(/\s/g, "").includes(lastEan)) {
+        lastLineRow = r;
+        break;
+      }
+    }
+  }
+  const labelled = /(?:n[úu]mero|n[ºo°])\s*de\s*(?:factura|albar[aá]n|pedido|documento)\s*:\s*([A-Z0-9][\w/.-]{2,})/i.exec(allText)?.[1];
   return {
     lines,
-    supplier: firstText.slice(0, 60),
-    number: findDocNumber(allText),
+    supplier: findSupplier(rows),
+    number: labelled ?? (findNumberUnderHeader(rows) || findDocNumber(allText)),
     date: findDate(allText),
     mode: header ? "header" : "heuristic",
+    footerTotals: findFooterTotals(rows, lastLineRow + 1),
+    adjustments,
+    dropped,
   };
 }
-
