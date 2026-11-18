@@ -1,7 +1,7 @@
 /** 对货: ventana que sale al escanear un producto del albarán. Pregunta cuántas han llegado. */
 import { useEffect, useRef, useState } from "react";
 import type { DocLine } from "../lib/db";
-import { formatEur, formatQty, parseNumber } from "../lib/num";
+import { formatEur, formatQty, parseNumber, withIva } from "../lib/num";
 import { t } from "../lib/i18n";
 
 interface Props {
@@ -44,6 +44,9 @@ export default function CheckSheet({ line, onConfirm, onUncheck, onClose }: Prop
           <div className="rounded-xl bg-slate-50 p-2">
             <div className="text-xs font-semibold text-slate-500">{t("Precio")}</div>
             <div className="text-2xl font-bold text-blue-700">{formatEur(line.price)}</div>
+            <div className="text-xs text-slate-500">
+              {t("Precio unitario con IVA")}: <b>{formatEur(withIva(line.price))}</b>
+            </div>
             {line.discount ? (
               <div className="text-xs text-slate-500">
                 {t("Dto %")}: {line.discount}

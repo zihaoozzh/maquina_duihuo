@@ -127,6 +127,7 @@ const ZH: Record<string, string> = {
   "precios sin IVA + IVA 21%": "单价不含税，加 21% 增值税",
   "precios sin IVA + IVA 21% + recargo de equivalencia 5,2%": "单价不含税，加 21% 增值税 + 5,2% 等价附加税",
   "Total con IVA": "含税合计",
+  "Precio unitario con IVA": "含税单价",
   "PVP sin IVA 21%": "售价不含 21% 增值税",
   "Sin conexión": "没有网络",
   "Email": "邮箱",
