@@ -86,6 +86,9 @@ export function formatQty(n: number | null | undefined): string {
 /** IVA general en España. */
 export const IVA = 0.21;
 
+/** Recargo de equivalencia que va con el IVA general (comercios minoristas). */
+export const RECARGO = 0.052;
+
 /** Añade el IVA a un precio sin IVA. */
 export const withIva = (n: number | null | undefined): number | null =>
   n == null ? null : Math.round(n * (1 + IVA) * 100) / 100;

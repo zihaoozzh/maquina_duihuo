@@ -1,5 +1,4 @@
-import { IVA } from "./num";
-import { round } from "./num";
+import { IVA, RECARGO, round } from "./num";
 
 export interface TotalLine {
   qty: number | null;
@@ -9,7 +8,7 @@ export interface TotalLine {
 }
 
 export type TotalsCheck =
-  | { kind: "final"; final: number; withIva: boolean } // cuadra con el importe final del documento
+  | { kind: "final"; final: number; withIva: boolean; recargo?: boolean } // cuadra con el importe final del documento
   | { kind: "base"; base: number; final: number } // cuadra con la base; el final es otro importe del pie
   | { kind: "mismatch"; calculated: number; calculatedIva: number; final: number };
 
@@ -35,6 +34,7 @@ export function checkTotals(lines: TotalLine[], footerTotals: number[], adjustme
   ];
   if (calcs.some((c) => near(c, final))) return { kind: "final", final, withIva: false };
   if (calcs.some((c) => near(c * (1 + IVA), final))) return { kind: "final", final, withIva: true };
+  if (calcs.some((c) => near(c * (1 + IVA + RECARGO), final))) return { kind: "final", final, withIva: true, recargo: true };
   for (const c of calcs) {
     const base = footerTotals.find((v) => near(v, c));
     if (base !== undefined) return { kind: "base", base, final };
