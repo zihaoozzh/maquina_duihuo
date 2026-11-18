@@ -79,8 +79,10 @@ export default function ProductInfo({ code }: { code: string }) {
                       {t("Cantidad")}: <b>{formatQty(l.qty)}</b>
                     </span>
                     <span>
-                      {t("Precio")}: <b>{formatEur(l.price)}</b>{" "}
-                      <span className="text-slate-500">({formatEur(withIva(l.price))} {t("con IVA")})</span>
+                      {t("Precio")}: <b>{formatEur(l.price)}</b>
+                    </span>
+                    <span>
+                      {t("Precio unitario con IVA")}: <b className="text-blue-700">{formatEur(withIva(l.price))}</b>
                     </span>
                     {l.discount ? <span>{t("Dto %")}: {l.discount}</span> : null}
                     <span>
