@@ -128,6 +128,8 @@ const ZH: Record<string, string> = {
   "Escanea un producto o toca una línea": "扫描商品或点击一行",
   "Editar": "编辑",
   "Editar albarán": "编辑送货单",
+  "La suma de las líneas cuadra con el documento": "各行合计与单据总额相符",
+  "Filas sin código de barras descartadas (revísalas en el documento)": "已忽略没有条码的行（请对照原单据检查）",
 
 };
 

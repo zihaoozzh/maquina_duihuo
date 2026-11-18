@@ -47,6 +47,21 @@ export function parseNumber(raw: unknown): number | null {
   return negative ? -n : n;
 }
 
+/**
+ * Descuento en %: "5,00%", "17,35" o encadenado "12+7+4" (se aplican uno tras otro).
+ * Devuelve el % total equivalente (12+7+4 → 21,43) o null si no es un descuento.
+ */
+export function parseDiscount(raw: unknown): number | null {
+  if (typeof raw === "number") return Number.isFinite(raw) ? raw : null;
+  if (raw == null) return null;
+  const s = String(raw).replace(/%/g, "").replace(/\s/g, "");
+  if (!s) return null;
+  if (!s.includes("+")) return parseNumber(s);
+  const parts = s.split("+").map((p) => parseNumber(p));
+  if (parts.some((p) => p == null || p < 0 || p > 100)) return null;
+  return round((1 - (parts as number[]).reduce((acc, d) => acc * (1 - d / 100), 1)) * 100, 2);
+}
+
 /** ¿El texto parece un número (cantidad, precio, importe)? */
 export function looksNumeric(raw: string): boolean {
   return parseNumber(raw) !== null;
