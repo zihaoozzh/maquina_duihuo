@@ -82,3 +82,10 @@ export function formatQty(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
   return new Intl.NumberFormat("es-ES", { maximumFractionDigits: 3 }).format(n);
 }
+
+/** IVA general en España. */
+export const IVA = 0.21;
+
+/** Añade el IVA a un precio sin IVA. */
+export const withIva = (n: number | null | undefined): number | null =>
+  n == null ? null : Math.round(n * (1 + IVA) * 100) / 100;

@@ -1,8 +1,9 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import LinesEditor, { emptyLine, fromEditable, toEditable, type EditableLine } from "../components/LinesEditor";
 import { parseDocument, type ParsedDocument } from "../lib/parse";
-import { formatEur, round } from "../lib/num";
+import { formatEur } from "../lib/num";
+import { checkTotals, type TotalsCheck } from "../lib/totals";
 import { saveDocument, type DocSource } from "../lib/db";
 import { t } from "../lib/i18n";
 
@@ -21,15 +22,6 @@ const EMPTY: ParsedDocument = { lines: [], supplier: "", number: "", date: "", m
 interface ReadResult {
   doc: ParsedDocument;
   notice: string;
-}
-
-/** Si la suma de las líneas (con los descuentos globales) coincide con un importe del pie del documento. */
-function checkTotals(doc: ParsedDocument): string {
-  if (doc.lines.length === 0 || doc.footerTotals.length === 0) return "";
-  const sum = round(doc.lines.reduce((s, l) => s + (l.total ?? 0), 0), 2);
-  const net = round(sum + doc.adjustments, 2);
-  const hit = doc.footerTotals.find((v) => Math.abs(v - net) <= 0.05 || Math.abs(v - sum) <= 0.05);
-  return hit === undefined ? "" : `✓ ${t("La suma de las líneas cuadra con el documento")}: ${formatEur(hit)}`;
 }
 
 const MANUAL = "No se puede leer automáticamente (foto o PDF escaneado). Añade las líneas a mano.";
@@ -62,10 +54,15 @@ export default function UploadPage() {
   const [step, setStep] = useState<Step>({ kind: "pick" });
   const [files, setFiles] = useState<File[]>([]);
   const [notice, setNotice] = useState("");
-  const [check, setCheck] = useState("");
+  const [footer, setFooter] = useState<{ totals: number[]; adjustments: number }>({ totals: [], adjustments: 0 });
   const [lines, setLines] = useState<EditableLine[]>([]);
   const [meta, setMeta] = useState({ supplier: "", number: "", date: "" });
   const [saving, setSaving] = useState(false);
+
+  const check = useMemo(
+    () => checkTotals(lines.map(fromEditable), footer.totals, footer.adjustments),
+    [lines, footer],
+  );
 
   async function onFiles(list: FileList | null | undefined) {
     const picked = list ? Array.from(list) : [];
@@ -75,7 +72,7 @@ export default function UploadPage() {
     try {
       const { doc, notice } = await readFiles(picked);
       setNotice(notice);
-      setCheck(checkTotals(doc));
+      setFooter({ totals: doc.footerTotals, adjustments: doc.adjustments });
       setLines(doc.lines.length ? doc.lines.map(toEditable) : [emptyLine()]);
       setMeta({ supplier: doc.supplier, number: doc.number, date: doc.date || new Date().toISOString().slice(0, 10) });
       setStep({ kind: "review" });
@@ -165,7 +162,7 @@ export default function UploadPage() {
         </div>
       </div>
       {notice && <p className="card text-amber-700">{notice}</p>}
-      {check && <p className="card font-semibold text-emerald-700">{check}</p>}
+      {check && <TotalsNotice check={check} />}
       <p className="text-sm font-semibold text-slate-600">
         {t("Revisa las líneas antes de guardar")} · {t("Toca una celda para corregirla")}
       </p>
@@ -180,4 +177,30 @@ export default function UploadPage() {
       </div>
     </div>
   );
+}
+
+function TotalsNotice({ check }: { check: TotalsCheck }) {
+  if (check.kind === "mismatch") {
+    return (
+      <div className="card space-y-1 border-amber-300 bg-amber-50 text-amber-900">
+        <p className="font-semibold">⚠ {t("El importe calculado no coincide con el importe final del documento")}</p>
+        <p className="text-sm">
+          {t("Importe final del documento")}: <b>{formatEur(check.final)}</b>
+        </p>
+        <p className="text-sm">
+          {t("Calculado con los precios")}: <b>{formatEur(check.calculated)}</b> · {t("con IVA 21%")}: <b>{formatEur(check.calculatedIva)}</b>
+        </p>
+        <p className="text-sm">
+          {t("Diferencia")}: <b>{formatEur(Math.round((check.final - check.calculated) * 100) / 100)}</b>
+        </p>
+      </div>
+    );
+  }
+  const text =
+    check.kind === "base"
+      ? `${t("La suma de las líneas cuadra con la base")} ${formatEur(check.base)} (${t("importe final")} ${formatEur(check.final)})`
+      : check.withIva
+        ? `${t("Cuadra con el importe final")} ${formatEur(check.final)} (${t("precios sin IVA + IVA 21%")})`
+        : `${t("Cuadra con el importe final")} ${formatEur(check.final)}`;
+  return <p className="card font-semibold text-emerald-700">✓ {text}</p>;
 }
