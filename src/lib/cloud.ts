@@ -36,20 +36,37 @@ const emit = () => {
 let snapshot: { config: CloudConfig | null; session: Session | null } = { config, session };
 
 function makeClient() {
-  client = config ? createClient(config.url, config.anonKey, { auth: { persistSession: true, autoRefreshToken: true } }) : null;
+  client = config
+    ? createClient(config.url, config.anonKey, {
+        auth: { persistSession: true, autoRefreshToken: true, storageKey: "tienda-auth", storage: window.localStorage },
+      })
+    : null;
   session = null;
   if (client) {
     client.auth.getSession().then(({ data }) => {
       session = data.session;
       emit();
     });
-    client.auth.onAuthStateChange((_event, s) => {
+    // La sesión solo se cierra con "Cerrar sesión" (SIGNED_OUT); cualquier otro evento
+    // (refresco de token, falta de red al arrancar...) no debe sacar al usuario.
+    client.auth.onAuthStateChange((event, s) => {
+      if (!s && event !== "SIGNED_OUT") return;
       session = s;
       emit();
     });
   }
 }
 makeClient();
+
+// Pedir al navegador que no borre los datos guardados (incluida la sesión) y renovar el token al volver a la app.
+try {
+  navigator.storage?.persist?.();
+} catch {
+  /* ignorar */
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && client) client.auth.getSession().catch(() => {});
+});
 
 export function getClient(): SupabaseClient | null {
   return client;
