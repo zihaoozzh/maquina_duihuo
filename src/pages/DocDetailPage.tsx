@@ -6,7 +6,7 @@ import CheckSheet from "../components/CheckSheet";
 import LinesEditor, { fromEditable, toEditable, type EditableLine } from "../components/LinesEditor";
 import { checkLine, db, deleteDocument, updateDocument, type DocLine } from "../lib/db";
 import { barcodeKey } from "../lib/ean";
-import { formatEur, formatQty } from "../lib/num";
+import { formatEur, formatQty, withIva } from "../lib/num";
 import { t } from "../lib/i18n";
 
 export default function DocDetailPage() {
@@ -105,7 +105,7 @@ export default function DocDetailPage() {
         </div>
         <div className="text-sm text-slate-600">{[doc.number, doc.date].filter(Boolean).join(" · ")}</div>
         <div className="mt-1 text-sm">
-          {doc.lineCount} {t("líneas")} · {t("Total")}: <b>{formatEur(doc.total)}</b>
+          {doc.lineCount} {t("líneas")} · {t("Total")}: <b>{formatEur(doc.total)}</b> · {t("Total con IVA")} (21%): <b>{formatEur(withIva(doc.total))}</b>
           {done > 0 && (
             <span className="ml-2 font-semibold text-green-700">
               {t("Comprobado")} {done}/{lines.length}
@@ -153,7 +153,8 @@ export default function DocDetailPage() {
                     {t("Cantidad")}: <b>{formatQty(l.qty)}</b>
                   </span>
                   <span>
-                    {t("Precio")}: <b>{formatEur(l.price)}</b>
+                    {t("Precio")}: <b>{formatEur(l.price)}</b>{" "}
+                    <span className="text-slate-500">({formatEur(withIva(l.price))} {t("con IVA")})</span>
                   </span>
                   {l.discount ? (
                     <span>

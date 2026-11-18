@@ -17,4 +17,8 @@ describe("checkTotals", () => {
     const r = checkTotals(lines, [100]);
     expect(r).toMatchObject({ kind: "mismatch", calculated: 24.5, calculatedIva: 29.65, final: 100 });
   });
+  it("factura con recargo de equivalencia (IVA 21% + 5,2%)", () => {
+    const l = [{ qty: 1, price: 402.46, discount: null, total: 402.46 }];
+    expect(checkTotals(l, [402.46, 84.52, 20.93, 507.91])).toEqual({ kind: "final", final: 507.91, withIva: true, recargo: true });
+  });
 });

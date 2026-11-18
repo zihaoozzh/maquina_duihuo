@@ -200,7 +200,7 @@ function TotalsNotice({ check }: { check: TotalsCheck }) {
     check.kind === "base"
       ? `${t("La suma de las líneas cuadra con la base")} ${formatEur(check.base)} (${t("importe final")} ${formatEur(check.final)})`
       : check.withIva
-        ? `${t("Cuadra con el importe final")} ${formatEur(check.final)} (${t("precios sin IVA + IVA 21%")})`
+        ? `${t("Cuadra con el importe final")} ${formatEur(check.final)} (${check.recargo ? t("precios sin IVA + IVA 21% + recargo de equivalencia 5,2%") : t("precios sin IVA + IVA 21%")})`
         : `${t("Cuadra con el importe final")} ${formatEur(check.final)}`;
   return <p className="card font-semibold text-emerald-700">✓ {text}</p>;
 }
