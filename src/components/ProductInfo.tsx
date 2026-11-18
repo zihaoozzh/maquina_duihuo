@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, findLinesByCode } from "../lib/db";
 import { barcodeKey } from "../lib/ean";
-import { formatEur, formatQty } from "../lib/num";
+import { formatEur, formatQty, withIva } from "../lib/num";
 import { t } from "../lib/i18n";
 
 /** Todo lo que se sabe de un código: producto de la caja + líneas de albaranes. */
@@ -46,6 +46,20 @@ export default function ProductInfo({ code }: { code: string }) {
         )}
       </div>
 
+      {(lastCost != null || product?.pvp != null) && (
+        <div className="card">
+          <h3 className="mb-2 font-bold">{t("Precios con IVA")} (21%)</h3>
+          <div className="grid grid-cols-2 gap-2 text-center">
+            <Stat label={t("Último coste con IVA")} value={formatEur(withIva(lastCost))} />
+            <Stat label={t("PVP con IVA")} value={formatEur(product?.pvp ?? null)} strong />
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            {t("Coste sin IVA")}: {formatEur(lastCost)} · {t("PVP sin IVA")}:{" "}
+            {formatEur(product?.pvp ? Math.round((product.pvp / 1.21) * 100) / 100 : null)}
+          </p>
+        </div>
+      )}
+
       <div className="card">
         <h3 className="mb-2 font-bold">{t("En albaranes")}</h3>
         {lines.length === 0 ? (
@@ -65,7 +79,8 @@ export default function ProductInfo({ code }: { code: string }) {
                       {t("Cantidad")}: <b>{formatQty(l.qty)}</b>
                     </span>
                     <span>
-                      {t("Precio")}: <b>{formatEur(l.price)}</b>
+                      {t("Precio")}: <b>{formatEur(l.price)}</b>{" "}
+                      <span className="text-slate-500">({formatEur(withIva(l.price))} {t("con IVA")})</span>
                     </span>
                     {l.discount ? <span>{t("Dto %")}: {l.discount}</span> : null}
                     <span>
