@@ -156,7 +156,7 @@ export default function DocDetailPage() {
                     {t("Precio")}: <b>{formatEur(l.price)}</b>
                   </span>
                   <span>
-                    {t("Precio unitario con IVA")}: <b className="text-blue-700">{formatEur(withIva(l.price))}</b>
+                    {t("Precio unitario con IVA")}: <b className="text-blue-700">{formatEur(withIva(l.price, doc.pricesWithIva))}</b>
                   </span>
                   {l.discount ? (
                     <span>
