@@ -492,14 +492,18 @@ export function parseRowsDetailed(rows: Row[]): { lines: ParsedLine[]; adjustmen
   const rest = lines.filter((l) => !looksLikeBarcode(l.ean));
   const named = rest.filter((l) => l.description);
   if (withEan.length >= 2 && withEan.length >= (withEan.length + named.length) * 0.6) {
-    // Cuentan en el total los descuentos (importe negativo) y los cargos con cantidad × precio
-    // coherentes con su importe (portes, recargos…); el resto (teléfonos, cuentas…) no.
+    // Se conservan como línea los cargos con cantidad × precio coherentes con su importe
+    // (portes, recargos, artículos sin código…); los descuentos globales (importe negativo)
+    // cuentan en el total como ajuste; el resto (teléfonos, cuentas…) se descarta.
     const isCharge = (l: ParsedLine) =>
       l.total != null && l.total > 0 && l.qty != null && l.price != null &&
       Math.abs(l.qty * l.price * (1 - (l.discount ?? 0) / 100) - l.total) <= Math.max(0.05, l.total * 0.005);
-    const adjustments = rest.filter((l) => l.total != null && (l.total < 0 || isCharge(l))).reduce((sum, l) => sum + (l.total ?? 0), 0);
-    const dropped = named.filter((l) => !(l.total != null && l.total < 0)).length;
-    return { lines: withEan, adjustments: round(adjustments, 2), dropped };
+    const charges = new Set(rest.filter(isCharge));
+    const adjustments = rest.filter((l) => l.total != null && l.total < 0).reduce((sum, l) => sum + (l.total ?? 0), 0);
+    const dropped = named.filter((l) => !charges.has(l) && !(l.total != null && l.total < 0)).length;
+    // conservando el orden del documento
+    const kept = lines.filter((l) => looksLikeBarcode(l.ean) || charges.has(l)).map((l) => (looksLikeBarcode(l.ean) ? l : { ...l, ean: "" }));
+    return { lines: kept, adjustments: round(adjustments, 2), dropped };
   }
   return { lines, adjustments: 0, dropped: 0 };
 }
