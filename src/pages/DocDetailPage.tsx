@@ -75,7 +75,7 @@ export default function DocDetailPage() {
             </div>
           </div>
         </div>
-        <LinesEditor lines={editing.lines} onChange={(l) => setEditing({ ...editing, lines: l })} />
+        <LinesEditor lines={editing.lines} onChange={(l) => setEditing({ ...editing, lines: l })} pricesWithIva={doc.pricesWithIva} />
         <div className="sticky bottom-16 -mx-4 flex gap-2 bg-[var(--bg)]/95 px-4 py-3 backdrop-blur">
           <button type="button" className="btn-secondary flex-1" onClick={() => setEditing(null)}>
             {t("Cancelar")}
@@ -105,7 +105,7 @@ export default function DocDetailPage() {
         </div>
         <div className="text-sm text-slate-600">{[doc.number, doc.date].filter(Boolean).join(" · ")}</div>
         <div className="mt-1 text-sm">
-          {doc.lineCount} {t("líneas")} · {t("Total")}: <b>{formatEur(doc.total)}</b> · {t("Total con IVA")} (21%): <b>{formatEur(withIva(doc.total))}</b>
+          {doc.lineCount} {t("líneas")} · {t("Total")}: <b>{formatEur(doc.total)}</b> · {t("Total con IVA")}{doc.pricesWithIva ? "" : " (21%)"}: <b>{formatEur(withIva(doc.total, doc.pricesWithIva))}</b>
           {done > 0 && (
             <span className="ml-2 font-semibold text-green-700">
               {t("Comprobado")} {done}/{lines.length}
@@ -196,6 +196,7 @@ export default function DocDetailPage() {
         <CheckSheet
           key={open.id}
           line={open}
+          pricesWithIva={doc.pricesWithIva}
           onClose={() => setOpen(null)}
           onConfirm={(n) => confirmLine(open, n)}
           onUncheck={async () => {

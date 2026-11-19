@@ -64,6 +64,9 @@ export default function UploadPage() {
     [lines, footer],
   );
 
+  // Si la suma cuadra tal cual con el total del documento, los precios ya llevan IVA
+  const pricesWithIva = check?.kind === "final" && !check.withIva;
+
   async function onFiles(list: FileList | null | undefined) {
     const picked = list ? Array.from(list) : [];
     if (picked.length === 0) return;
@@ -88,7 +91,7 @@ export default function UploadPage() {
     if (clean.length === 0 || files.length === 0) return;
     setSaving(true);
     try {
-      const id = await saveDocument({ ...meta, fileName: files.map((f) => f.name).join(", "), source: kindOf(files[0]) === "photo" ? "manual" : kindOf(files[0]) }, clean);
+      const id = await saveDocument({ ...meta, fileName: files.map((f) => f.name).join(", "), source: kindOf(files[0]) === "photo" ? "manual" : kindOf(files[0]), ...(pricesWithIva ? { pricesWithIva: true } : {}) }, clean);
       navigate(`/albaranes/${id}`, { replace: true });
     } finally {
       setSaving(false);
@@ -166,7 +169,7 @@ export default function UploadPage() {
       <p className="text-sm font-semibold text-slate-600">
         {t("Revisa las líneas antes de guardar")} · {t("Toca una celda para corregirla")}
       </p>
-      <LinesEditor lines={lines} onChange={setLines} />
+      <LinesEditor lines={lines} onChange={setLines} pricesWithIva={pricesWithIva} />
       <div className="sticky bottom-16 -mx-4 flex gap-2 bg-[var(--bg)]/95 px-4 py-3 backdrop-blur">
         <button type="button" className="btn-secondary flex-1" onClick={() => setStep({ kind: "pick" })}>
           {t("Cancelar")}
@@ -201,6 +204,6 @@ function TotalsNotice({ check }: { check: TotalsCheck }) {
       ? `${t("La suma de las líneas cuadra con la base")} ${formatEur(check.base)} (${t("importe final")} ${formatEur(check.final)})`
       : check.withIva
         ? `${t("Cuadra con el importe final")} ${formatEur(check.final)} (${check.recargo ? t("precios sin IVA + IVA 21% + recargo de equivalencia 5,2%") : t("precios sin IVA + IVA 21%")})`
-        : `${t("Cuadra con el importe final")} ${formatEur(check.final)}`;
+        : `${t("Cuadra con el importe final")} ${formatEur(check.final)} (${t("los precios ya llevan IVA")})`;
   return <p className="card font-semibold text-emerald-700">✓ {text}</p>;
 }

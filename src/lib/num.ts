@@ -90,5 +90,5 @@ export const IVA = 0.21;
 export const RECARGO = 0.052;
 
 /** Añade el IVA a un precio sin IVA. */
-export const withIva = (n: number | null | undefined): number | null =>
-  n == null ? null : Math.round(n * (1 + IVA) * 100) / 100;
+export const withIva = (n: number | null | undefined, alreadyIncluded = false): number | null =>
+  n == null ? null : alreadyIncluded ? n : Math.round(n * (1 + IVA) * 100) / 100;

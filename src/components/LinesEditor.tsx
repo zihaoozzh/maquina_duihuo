@@ -57,9 +57,11 @@ export function fromEditable(l: EditableLine) {
 interface Props {
   lines: EditableLine[];
   onChange: (lines: EditableLine[]) => void;
+  /** Los precios ya llevan IVA: no se suma el 21 % */
+  pricesWithIva?: boolean;
 }
 
-export default function LinesEditor({ lines, onChange }: Props) {
+export default function LinesEditor({ lines, onChange, pricesWithIva }: Props) {
   const update = (i: number, patch: Partial<EditableLine>) =>
     onChange(lines.map((l, j) => (j === i ? { ...l, ...patch, warnings: [] } : l)));
   const remove = (i: number) => onChange(lines.filter((_, j) => j !== i));
@@ -93,7 +95,7 @@ export default function LinesEditor({ lines, onChange }: Props) {
               <Field label={t("Importe")} value={l.total} onChange={(v) => update(i, { total: v })} inputMode="decimal" />
             </div>
             <p className="pl-8 text-sm">
-              {t("Precio unitario con IVA")} (21%): <b className="text-blue-700">{formatEur(withIva(parseNumber(l.price)))}</b>
+              {t("Precio unitario con IVA")}{pricesWithIva ? "" : " (21%)"}: <b className="text-blue-700">{formatEur(withIva(parseNumber(l.price), pricesWithIva))}</b>
             </p>
             {l.warnings.length > 0 && <p className="pl-8 text-sm font-semibold text-amber-700">⚠ {l.warnings.map(t).join(" · ")}</p>}
           </div>

@@ -124,6 +124,7 @@ const ZH: Record<string, string> = {
   "La suma de las líneas cuadra con la base": "各行合计与税前金额相符",
   "importe final": "最终金额",
   "Cuadra con el importe final": "与最终金额相符",
+  "los precios ya llevan IVA": "价格已含税",
   "precios sin IVA + IVA 21%": "单价不含税，加 21% 增值税",
   "precios sin IVA + IVA 21% + recargo de equivalencia 5,2%": "单价不含税，加 21% 增值税 + 5,2% 等价附加税",
   "Total con IVA": "含税合计",

@@ -15,7 +15,10 @@ export default function ProductInfo({ code }: { code: string }) {
   const name = product?.name || latest?.description || "";
   // La tienda trabaja con el precio unitario tal cual (sin restar el descuento)
   const lastCost = latest?.price ?? product?.cost ?? null;
-  const margin = product?.pvp && lastCost ? ((product.pvp / 1.21 - lastCost) / lastCost) * 100 : null;
+  // Si el último albarán ya trae los precios con IVA, el coste sin IVA es el precio entre 1,21
+  const costWithIva = latest?.doc?.pricesWithIva && latest.price != null;
+  const costNoIva = costWithIva && lastCost != null ? Math.round((lastCost / 1.21) * 100) / 100 : lastCost;
+  const margin = product?.pvp && costNoIva ? ((product.pvp / 1.21 - costNoIva) / costNoIva) * 100 : null;
 
   return (
     <div className="space-y-3">
@@ -50,11 +53,11 @@ export default function ProductInfo({ code }: { code: string }) {
         <div className="card">
           <h3 className="mb-2 font-bold">{t("Precios con IVA")} (21%)</h3>
           <div className="grid grid-cols-2 gap-2 text-center">
-            <Stat label={t("Último coste con IVA")} value={formatEur(withIva(lastCost))} />
+            <Stat label={t("Último coste con IVA")} value={formatEur(withIva(lastCost, costWithIva))} />
             <Stat label={t("PVP con IVA")} value={formatEur(product?.pvp ?? null)} strong />
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            {t("Coste sin IVA")}: {formatEur(lastCost)} · {t("PVP sin IVA")}:{" "}
+            {t("Coste sin IVA")}: {formatEur(costNoIva)} · {t("PVP sin IVA")}:{" "}
             {formatEur(product?.pvp ? Math.round((product.pvp / 1.21) * 100) / 100 : null)}
           </p>
         </div>
@@ -82,7 +85,7 @@ export default function ProductInfo({ code }: { code: string }) {
                       {t("Precio")}: <b>{formatEur(l.price)}</b>
                     </span>
                     <span>
-                      {t("Precio unitario con IVA")}: <b className="text-blue-700">{formatEur(withIva(l.price))}</b>
+                      {t("Precio unitario con IVA")}: <b className="text-blue-700">{formatEur(withIva(l.price, l.doc?.pricesWithIva))}</b>
                     </span>
                     {l.discount ? <span>{t("Dto %")}: {l.discount}</span> : null}
                     <span>
