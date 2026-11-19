@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guessNumbers, parseDocument, parseRows, type Row } from "./parse";
+import { guessNumbers, parseDocument, parseRows, stripCjk, type Row } from "./parse";
 import { parseDiscount, parseNumber } from "./num";
 import { barcodeKey, isGtinChecksumValid } from "./ean";
 
@@ -221,5 +221,13 @@ describe("albarán Excel con bloque de cliente y línea sin código", () => {
     expect(doc.adjustments).toBe(42);
     expect(doc.dropped).toBe(1);
     expect(doc.footerTotals).toContain(88.02);
+  });
+});
+
+describe("stripCjk", () => {
+  it("quita los caracteres chinos de la descripción", () => {
+    expect(stripCjk("BANDEJA MAGNUM BLANCO 塑料托盘")).toBe("BANDEJA MAGNUM BLANCO");
+    expect(stripCjk("CAJA 3 3号塑料盒")).toBe("CAJA 3 3");
+    expect(stripCjk("PLATO 25CM")).toBe("PLATO 25CM");
   });
 });

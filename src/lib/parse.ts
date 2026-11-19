@@ -325,7 +325,9 @@ function finishLine(fields: Partial<Record<LineField, string>>, fallbackTokens: 
   const warnings: string[] = [];
   let ean = cleanBarcode(fields.ean ?? "");
   let ref = (fields.ref ?? "").trim();
-  let description = (fields.description ?? "").trim();
+  const rawDescription = (fields.description ?? "").trim();
+  // Sin caracteres chinos; si el nombre es solo chino, se conserva para no dejarlo vacío
+  let description = stripCjk(rawDescription) || rawDescription;
 
   // Si el EAN está en otra columna (ref o descripción), lo encontramos igualmente
   if (!looksLikeBarcode(ean)) {
@@ -405,6 +407,11 @@ function finishLine(fields: Partial<Record<LineField, string>>, fallbackTokens: 
   return { ean, ref, description, qty, price, discount, total, warnings };
 }
 
+/** Quita los caracteres chinos (y su puntuación) de un texto y normaliza los espacios. */
+export function stripCjk(s: string): string {
+  return s.replace(/[\u2E80-\u2FDF\u3000-\u303F\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 export function parseRows(rows: Row[]): ParsedLine[] {
   return parseRowsDetailed(rows).lines;
 }
@@ -474,7 +481,7 @@ export function parseRowsDetailed(rows: Row[]): { lines: ParsedLine[]; adjustmen
       last = line;
     } else if (last && !hasNumber && (fields.description || fields.ref) && text.length < 80 && /[a-záéíóúñ]{3,}/i.test(text) && !/albar[aá]n|factura|pedido|fecha|p[aá]gina|\d+\s+de\s+\d+/i.test(text)) {
       // Continuación de la descripción en la línea de abajo
-      last.description = `${last.description} ${text}`.trim();
+      last.description = `${last.description} ${stripCjk(text)}`.trim();
     } else {
       last = null;
     }
