@@ -213,13 +213,14 @@ describe("albarán Excel con bloque de cliente y línea sin código", () => {
     r("8410000000030", "CUBO", "", "6", "2.5", "", "", "", "15"),
     r("", "Sub Total: 88.02", "", "", "", "", "", "Total: 88.02 €", ""),
   ];
-  it("no toma al cliente como proveedor y cuenta la línea sin código como ajuste", () => {
+  it("no toma al cliente como proveedor y conserva la línea sin código", () => {
     const doc = parseDocument(rows);
     expect(doc.supplier).toBe("");
     expect(doc.number).toBe("261100000001");
-    expect(doc.lines).toHaveLength(3);
-    expect(doc.adjustments).toBe(42);
-    expect(doc.dropped).toBe(1);
+    expect(doc.lines).toHaveLength(4);
+    expect(doc.lines[0]).toMatchObject({ ean: "", qty: 1, price: 42, total: 42 });
+    expect(doc.adjustments).toBe(0);
+    expect(doc.dropped).toBe(0);
     expect(doc.footerTotals).toContain(88.02);
   });
 });
