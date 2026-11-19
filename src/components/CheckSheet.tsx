@@ -6,12 +6,14 @@ import { t } from "../lib/i18n";
 
 interface Props {
   line: DocLine;
+  /** Los precios del albarán ya llevan IVA: no se suma el 21 % */
+  pricesWithIva?: boolean;
   onConfirm: (received: number) => void;
   onUncheck: () => void;
   onClose: () => void;
 }
 
-export default function CheckSheet({ line, onConfirm, onUncheck, onClose }: Props) {
+export default function CheckSheet({ line, pricesWithIva, onConfirm, onUncheck, onClose }: Props) {
   const initial = line.checkedAt ? line.received : (line.qty ?? 1);
   const [value, setValue] = useState(String(initial).replace(".", ","));
   const inputRef = useRef<HTMLInputElement>(null);
@@ -45,7 +47,7 @@ export default function CheckSheet({ line, onConfirm, onUncheck, onClose }: Prop
             <div className="text-xs font-semibold text-slate-500">{t("Precio")}</div>
             <div className="text-2xl font-bold text-blue-700">{formatEur(line.price)}</div>
             <div className="text-xs text-slate-500">
-              {t("Precio unitario con IVA")}: <b>{formatEur(withIva(line.price))}</b>
+              {t("Precio unitario con IVA")}: <b>{formatEur(withIva(line.price, pricesWithIva))}</b>
             </div>
             {line.discount ? (
               <div className="text-xs text-slate-500">

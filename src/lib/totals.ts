@@ -37,7 +37,11 @@ export function checkTotals(lines: TotalLine[], footerTotals: number[], adjustme
   if (calcs.some((c) => near(c * (1 + IVA + RECARGO), final))) return { kind: "final", final, withIva: true, recargo: true };
   for (const c of calcs) {
     const base = footerTotals.find((v) => near(v, c));
-    if (base !== undefined) return { kind: "base", base, final };
+    if (base === undefined) continue;
+    // Si ningún importe del pie es esa base + IVA, no hay IVA que añadir: la suma ya es el total
+    // del documento (el mayor del pie era otra cosa, p. ej. el subtotal antes del descuento).
+    const hasIvaTotal = footerTotals.some((v) => v !== base && (near(v, base * (1 + IVA)) || near(v, base * (1 + IVA + RECARGO))));
+    return hasIvaTotal ? { kind: "base", base, final } : { kind: "final", final: base, withIva: false };
   }
   return { kind: "mismatch", calculated: round(calcs[0], 2), calculatedIva: round(calcs[0] * (1 + IVA), 2), final };
 }

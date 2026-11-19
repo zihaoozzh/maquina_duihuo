@@ -230,7 +230,7 @@ async function pull(sb: SupabaseClient) {
       }
       if (local?.dirty) continue; // lo de este móvil se subirá y ganará
       if (await db.tombstones.get(r.id)) continue;
-      await db.docs.put(docFromRemote(r));
+      await db.docs.put({ ...docFromRemote(r), ...(local?.pricesWithIva ? { pricesWithIva: true } : {}) });
     }
     for (const r of remoteLines) {
       const local = await db.lines.get(r.id);

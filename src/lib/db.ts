@@ -18,6 +18,9 @@ export interface DeliveryDoc {
   createdAt: number;
   lineCount: number;
   total: number;
+  /** Los precios del albarán ya llevan IVA (la suma de líneas cuadra con el total del documento).
+   *  Solo se guarda en este dispositivo (no se sincroniza). */
+  pricesWithIva?: boolean;
   /** 1 = cambios pendientes de subir a la base de datos compartida */
   dirty?: number;
   rev?: number;
