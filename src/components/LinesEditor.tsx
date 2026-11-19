@@ -1,4 +1,4 @@
-import { parseNumber, formatEur, round } from "../lib/num";
+import { parseNumber, formatEur, round, withIva } from "../lib/num";
 import { t } from "../lib/i18n";
 import { looksLikeBarcode, cleanBarcode } from "../lib/ean";
 
@@ -92,6 +92,9 @@ export default function LinesEditor({ lines, onChange }: Props) {
               <Field label={t("Dto %")} value={l.discount} onChange={(v) => update(i, { discount: v })} inputMode="decimal" />
               <Field label={t("Importe")} value={l.total} onChange={(v) => update(i, { total: v })} inputMode="decimal" />
             </div>
+            <p className="pl-8 text-sm">
+              {t("Precio unitario con IVA")} (21%): <b className="text-blue-700">{formatEur(withIva(parseNumber(l.price)))}</b>
+            </p>
             {l.warnings.length > 0 && <p className="pl-8 text-sm font-semibold text-amber-700">⚠ {l.warnings.map(t).join(" · ")}</p>}
           </div>
         );

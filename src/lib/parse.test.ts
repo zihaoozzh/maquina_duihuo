@@ -231,3 +231,15 @@ describe("stripCjk", () => {
     expect(stripCjk("PLATO 25CM")).toBe("PLATO 25CM");
   });
 });
+
+describe("Pie con importes de un solo decimal (Excel)", () => {
+  it("recoge 162.7 como importe del pie", () => {
+    const rows: Row[] = [
+      row(["Cod.Barra", 0], ["Descripcion", 1], ["Unidades", 2], ["Precio", 3], ["Importe", 4]),
+      row(["8410000000016", 0], ["BOMBILLA", 1], ["12", 2], ["0.87", 3], ["10.44", 4]),
+      row(["Base imponible", 0], ["Total", 2]),
+      row(["10.44", 0], ["12.6", 2]),
+    ];
+    expect(parseDocument(rows).footerTotals).toEqual(expect.arrayContaining([10.44, 12.6]));
+  });
+});

@@ -577,7 +577,7 @@ export function findFooterTotals(rows: Row[], fromRow: number): number[] {
     for (const c of rows[r]) {
       if (/%/.test(c.text)) continue;
       for (const tok of c.text.split(/\s+/)) {
-        const n = /\d[.,]\d{2}$/.test(tok) ? parseNumber(tok.replace(/[()]/g, "")) : null;
+        const n = /\d[.,]\d{1,2}$/.test(tok) ? parseNumber(tok.replace(/[()]/g, "")) : null;
         if (n != null && n > 0) out.add(round(n, 2));
       }
     }
