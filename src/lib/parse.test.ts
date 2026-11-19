@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guessNumbers, parseDocument, parseRows, type Row } from "./parse";
+import { guessNumbers, parseDocument, parseRows, stripCjk, type Row } from "./parse";
 import { parseDiscount, parseNumber } from "./num";
 import { barcodeKey, isGtinChecksumValid } from "./ean";
 
@@ -195,6 +195,40 @@ describe("Descripción en dos líneas y pie con totales", () => {
     expect(doc.lines[0]).toMatchObject({ ean: "8410000000016", description: "FILM TRANSPARENTE 50mm APROX.", qty: 6, price: 3.9, discount: 17.35, total: 19.34 });
     expect(doc.footerTotals).toContain(34.85);
     expect(doc.footerTotals).toContain(28.8);
+  });
+});
+
+describe("albarán Excel con bloque de cliente y línea sin código", () => {
+  const c = (text: string, i: number) => ({ text, x0: i, x1: i + 1 });
+  const r = (...v: string[]) => v.map((t, i) => c(t, i)).filter((x) => x.text !== "");
+  const rows: Row[] = [
+    r("", "", "", "", "", "", "", "", "Albaran"),
+    r("", "", "", "", "", "", "", "", "Cliente ID: 1234567890"),
+    r("", "", "", "", "", "", "", "", "JUAN PEREZ"),
+    r("№ Albaran: 261100000001  Fecha：17-11-2026"),
+    r("CODIGO", "DESCRIPCION", "", "Unds.", "Precio", "", "D.%", "", "SubTotal"),
+    r("0", "0", "", "1", "42", "", "", "", "42"),
+    r("8410000000016", "BANDEJA", "", "12", "1.8", "", "5", "", "20.52"),
+    r("8410000000023", "EMBUDO", "", "10", "1.05", "", "", "", "10.5"),
+    r("8410000000030", "CUBO", "", "6", "2.5", "", "", "", "15"),
+    r("", "Sub Total: 88.02", "", "", "", "", "", "Total: 88.02 €", ""),
+  ];
+  it("no toma al cliente como proveedor y cuenta la línea sin código como ajuste", () => {
+    const doc = parseDocument(rows);
+    expect(doc.supplier).toBe("");
+    expect(doc.number).toBe("261100000001");
+    expect(doc.lines).toHaveLength(3);
+    expect(doc.adjustments).toBe(42);
+    expect(doc.dropped).toBe(1);
+    expect(doc.footerTotals).toContain(88.02);
+  });
+});
+
+describe("stripCjk", () => {
+  it("quita los caracteres chinos de la descripción", () => {
+    expect(stripCjk("BANDEJA MAGNUM BLANCO 塑料托盘")).toBe("BANDEJA MAGNUM BLANCO");
+    expect(stripCjk("CAJA 3 3号塑料盒")).toBe("CAJA 3 3");
+    expect(stripCjk("PLATO 25CM")).toBe("PLATO 25CM");
   });
 });
 
