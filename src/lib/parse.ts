@@ -412,6 +412,9 @@ export function stripCjk(s: string): string {
   return s.replace(/[\u2E80-\u2FDF\u3000-\u303F\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
+/** Aviso de las filas sin código de barras que se conservan: la persona decide si las quita. */
+export const DOUBTFUL = "Revisa si es un producto: si no lo es, quítala con ✕";
+
 export function parseRows(rows: Row[]): ParsedLine[] {
   return parseRowsDetailed(rows).lines;
 }
@@ -492,17 +495,18 @@ export function parseRowsDetailed(rows: Row[]): { lines: ParsedLine[]; adjustmen
   const rest = lines.filter((l) => !looksLikeBarcode(l.ean));
   const named = rest.filter((l) => l.description);
   if (withEan.length >= 2 && withEan.length >= (withEan.length + named.length) * 0.6) {
-    // Se conservan como línea los cargos con cantidad × precio coherentes con su importe
-    // (portes, recargos, artículos sin código…); los descuentos globales (importe negativo)
-    // cuentan en el total como ajuste; el resto (teléfonos, cuentas…) se descarta.
+    // Las filas sin código de barras pero con nombre e importe se conservan como línea marcada
+    // (portes, recargos, artículos sin código…) y decide la persona si las quita. Los descuentos
+    // globales (importe negativo) cuentan en el total como ajuste; las filas sin importe
+    // (teléfonos, cuentas…) se descartan.
     const isCharge = (l: ParsedLine) =>
       l.total != null && l.total > 0 && l.qty != null && l.price != null &&
       Math.abs(l.qty * l.price * (1 - (l.discount ?? 0) / 100) - l.total) <= Math.max(0.05, l.total * 0.005);
-    const charges = new Set(rest.filter(isCharge));
+    const charges = new Set(rest.filter((l) => isCharge(l) || (l.total != null && l.total > 0 && l.description !== "")));
     const adjustments = rest.filter((l) => l.total != null && l.total < 0).reduce((sum, l) => sum + (l.total ?? 0), 0);
     const dropped = named.filter((l) => !charges.has(l) && !(l.total != null && l.total < 0)).length;
     // conservando el orden del documento
-    const kept = lines.filter((l) => looksLikeBarcode(l.ean) || charges.has(l)).map((l) => (looksLikeBarcode(l.ean) ? l : { ...l, ean: "" }));
+    const kept = lines.filter((l) => looksLikeBarcode(l.ean) || charges.has(l)).map((l) => (looksLikeBarcode(l.ean) ? l : { ...l, ean: "", warnings: [...l.warnings.filter((w) => w !== DOUBTFUL), DOUBTFUL] }));
     return { lines: kept, adjustments: round(adjustments, 2), dropped };
   }
   return { lines, adjustments: 0, dropped: 0 };

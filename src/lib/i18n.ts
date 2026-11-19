@@ -78,6 +78,7 @@ const ZH: Record<string, string> = {
   "Último coste": "最近进价",
   "Margen": "利润率",
   "Sin código de barras": "没有条码",
+  "Revisa si es un producto: si no lo es, quítala con ✕": "请确认是否为商品，不是请点 ✕ 删除",
   "Código de barras dudoso": "条码可疑",
   "Falta la cantidad": "缺少数量",
   "Falta el precio": "缺少单价",
