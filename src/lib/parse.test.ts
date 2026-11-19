@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { guessNumbers, parseDocument, parseRows, stripCjk, type Row } from "./parse";
+import { guessNumbers, parseDocument, parseRows, stripCjk, DOUBTFUL, type Row } from "./parse";
 import { parseDiscount, parseNumber } from "./num";
 import { barcodeKey, isGtinChecksumValid } from "./ean";
 
@@ -219,6 +219,7 @@ describe("albarán Excel con bloque de cliente y línea sin código", () => {
     expect(doc.number).toBe("261100000001");
     expect(doc.lines).toHaveLength(4);
     expect(doc.lines[0]).toMatchObject({ ean: "", qty: 1, price: 42, total: 42 });
+    expect(doc.lines[0].warnings).toContain(DOUBTFUL);
     expect(doc.adjustments).toBe(0);
     expect(doc.dropped).toBe(0);
     expect(doc.footerTotals).toContain(88.02);

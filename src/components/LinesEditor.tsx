@@ -1,5 +1,6 @@
 import { parseNumber, formatEur, round, withIva } from "../lib/num";
 import { t } from "../lib/i18n";
+import { DOUBTFUL } from "../lib/parse";
 import { looksLikeBarcode, cleanBarcode } from "../lib/ean";
 
 export interface EditableLine {
@@ -70,8 +71,9 @@ export default function LinesEditor({ lines, onChange, pricesWithIva }: Props) {
     <div className="space-y-2">
       {lines.map((l, i) => {
         const eanBad = l.ean !== "" && !looksLikeBarcode(l.ean);
+        const doubtful = l.warnings.includes(DOUBTFUL);
         return (
-          <div key={i} className={`card space-y-2 p-3 ${l.warnings.length ? "ring-2 ring-amber-300" : ""}`}>
+          <div key={i} className={`card space-y-2 p-3 ${doubtful ? "bg-amber-50 ring-2 ring-amber-400" : l.warnings.length ? "ring-2 ring-amber-300" : ""}`}>
             <div className="flex items-start gap-2">
               <span className="mt-2 w-6 shrink-0 text-right text-xs font-bold text-slate-400">{i + 1}</span>
               <input
