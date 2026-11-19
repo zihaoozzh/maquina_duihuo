@@ -28,7 +28,9 @@ function checkTotals(doc: ParsedDocument): string {
   if (doc.lines.length === 0 || doc.footerTotals.length === 0) return "";
   const sum = round(doc.lines.reduce((s, l) => s + (l.total ?? 0), 0), 2);
   const net = round(sum + doc.adjustments, 2);
-  const hit = doc.footerTotals.find((v) => Math.abs(v - net) <= 0.05 || Math.abs(v - sum) <= 0.05);
+  // el redondeo línea a línea del documento puede acumular unos céntimos
+  const tol = Math.min(0.5, 0.05 + 0.001 * doc.lines.length);
+  const hit = doc.footerTotals.find((v) => Math.abs(v - net) <= tol || Math.abs(v - sum) <= tol);
   return hit === undefined ? "" : `✓ ${t("La suma de las líneas cuadra con el documento")}: ${formatEur(hit)}`;
 }
 

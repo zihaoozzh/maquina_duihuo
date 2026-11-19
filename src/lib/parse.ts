@@ -260,7 +260,7 @@ export function guessNumbers(nums: number[]): NumericGuess {
 // ---------------------------------------------------------------------------
 // Filas → líneas
 
-const STOP_WORDS = /^(suma|total|subtotal|base imponible|iva|i\.v\.a|recargo|portes|importe total|total albaran|total factura|forma de pago|vencimiento|observaciones|合计|总计)/;
+const STOP_WORDS = /^(suma|total|sub ?total|base imponible|iva|i\.v\.a|recargo|portes|importe total|total albaran|total factura|forma de pago|vencimiento|observaciones|合计|总计)/;
 
 function isFooterRow(text: string): boolean {
   return STOP_WORDS.test(normalizeText(text));
@@ -485,7 +485,12 @@ export function parseRowsDetailed(rows: Row[]): { lines: ParsedLine[]; adjustmen
   const rest = lines.filter((l) => !looksLikeBarcode(l.ean));
   const named = rest.filter((l) => l.description);
   if (withEan.length >= 2 && withEan.length >= (withEan.length + named.length) * 0.6) {
-    const adjustments = rest.filter((l) => l.total != null && l.total < 0).reduce((sum, l) => sum + (l.total ?? 0), 0);
+    // Cuentan en el total los descuentos (importe negativo) y los cargos con cantidad × precio
+    // coherentes con su importe (portes, recargos…); el resto (teléfonos, cuentas…) no.
+    const isCharge = (l: ParsedLine) =>
+      l.total != null && l.total > 0 && l.qty != null && l.price != null &&
+      Math.abs(l.qty * l.price * (1 - (l.discount ?? 0) / 100) - l.total) <= Math.max(0.05, l.total * 0.005);
+    const adjustments = rest.filter((l) => l.total != null && (l.total < 0 || isCharge(l))).reduce((sum, l) => sum + (l.total ?? 0), 0);
     const dropped = named.filter((l) => !(l.total != null && l.total < 0)).length;
     return { lines: withEan, adjustments: round(adjustments, 2), dropped };
   }
@@ -520,6 +525,8 @@ const DOC_TITLE_RE = /^(factura|albaran|albarán|pedido|presupuesto|duplicado|or
 /** Proveedor: primera celda con forma de empresa (S.L., S.A.…); si no hay, la primera que no sea el título. */
 export function findSupplier(rows: Row[]): string {
   const cells = rows.slice(0, 25).flat().map((c) => c.text.trim()).filter((t) => /[a-zA-Z]{3,}/.test(t));
+  // Albarán que solo trae el bloque del cliente ("Cliente ID: …"): el proveedor no consta
+  if (!cells.some((t) => COMPANY_RE.test(t) && t.length <= 80 && !/^[\d\s]+$/.test(t)) && cells.some((t) => /^cliente\b/i.test(t))) return "";
   const company = cells.find((t) => COMPANY_RE.test(t) && t.length <= 80 && !/^[\d\s]+$/.test(t));
   if (company) {
     const m = COMPANY_RE.exec(company);
