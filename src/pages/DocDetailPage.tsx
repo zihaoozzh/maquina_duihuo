@@ -19,14 +19,17 @@ export default function DocDetailPage() {
   const [flash, setFlash] = useState<{ ok: boolean; text: string } | null>(null);
   const [editing, setEditing] = useState<{ meta: { supplier: string; number: string; date: string }; lines: EditableLine[] } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [typed, setTyped] = useState("");
 
   if (doc === undefined || lines === undefined) return <div className="card text-slate-500">…</div>;
   if (!doc) return <div className="card">—</div>;
 
   function onScan(code: string) {
     const key = barcodeKey(code);
-    // La primera línea con ese código que aún no esté comprobada
-    const line = lines!.find((l) => l.key === key && !l.checkedAt) ?? lines!.find((l) => l.key === key);
+    const ref = code.trim().toLowerCase();
+    const matches = (l: DocLine) => (key !== "" && l.key === key) || (ref !== "" && l.ref.trim().toLowerCase() === ref);
+    // La primera línea con ese código (o referencia) que aún no esté comprobada
+    const line = lines!.find((l) => matches(l) && !l.checkedAt) ?? lines!.find(matches);
     if (!line) {
       navigator.vibrate?.([80, 60, 80]);
       setFlash({ ok: false, text: `${code} · ${t("No está en este albarán")}` });
@@ -122,6 +125,20 @@ export default function DocDetailPage() {
         <div className="space-y-2">
           <p className="text-center text-sm text-slate-600">{t("Escanea un producto o toca una línea")}</p>
           <Scanner onCode={onScan} paused={!!open} />
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!typed.trim()) return;
+              onScan(typed.trim());
+              setTyped("");
+            }}
+          >
+            <input className="input" placeholder={t("Escribir código")} value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
+            <button className="btn-secondary shrink-0 whitespace-nowrap" type="submit">
+              {t("Buscar")}
+            </button>
+          </form>
           {flash && (
             <p className={`rounded-xl p-3 text-center font-semibold ${flash.ok ? "bg-green-50 text-green-800" : "bg-red-50 text-red-700"}`}>{flash.text}</p>
           )}
