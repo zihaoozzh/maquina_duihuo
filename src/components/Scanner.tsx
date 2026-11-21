@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listBackCameras, openCamera, refocus, saveCamera, savedCamera, tuneTrack, type CameraInfo } from "../lib/camera";
 import { t } from "../lib/i18n";
+import { createDedupe } from "../lib/scanDedupe";
 
 interface Props {
   onCode: (code: string) => void;
@@ -33,15 +34,11 @@ export default function Scanner({ onCode, paused }: Props) {
     let stream: MediaStream | null = null;
     let zxingControls: { stop: () => void } | null = null;
     let raf = 0;
-    let lastCode = "";
-    let lastAt = 0;
+    const dedupe = createDedupe(2500);
 
     const emit = (code: string) => {
-      const now = Date.now();
       if (pausedRef.current) return;
-      if (code === lastCode && now - lastAt < 2500) return; // evitar repetir el mismo código
-      lastCode = code;
-      lastAt = now;
+      if (!dedupe.accept(code, Date.now())) return; // evitar repetir el mismo código
       navigator.vibrate?.(60);
       onCodeRef.current(code);
     };
