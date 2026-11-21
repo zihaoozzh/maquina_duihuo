@@ -11,7 +11,6 @@ const ZH: Record<string, string> = {
   "Productos de la caja": "收银系统商品",
   "Inicio": "首页",
   "Ajustes": "设置",
-  "Volver": "返回",
   "Idioma": "语言",
   "Volver": "返回",
   "Guardar": "保存",
