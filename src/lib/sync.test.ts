@@ -19,7 +19,7 @@ class Query {
   select() { this.op = this.op === "select" ? "select" : this.op; return this; }
   update(v: Row) { this.op = "update"; this.payload = v; return this; }
   delete() { this.op = "delete"; return this; }
-  upsert(v: Row | Row[]) { this.op = "upsert"; this.payload = v; return this; }
+  upsert(v: Row | Row[], _opts?: { onConflict?: string }) { void _opts; this.op = "upsert"; this.payload = v; return this; }
   in(c: string, vals: unknown[]) { this.filters.push((r) => vals.includes(r[c])); return this; }
   eq(c: string, v: unknown) { this.filters.push((r) => r[c] === v); return this; }
   neq(c: string, v: unknown) { this.filters.push((r) => r[c] !== v); return this; }
@@ -51,10 +51,11 @@ class Query {
 }
 const fakeClient = { from: (t: string) => new Query(t) };
 
-vi.mock("./cloud", () => ({ getClient: () => fakeClient, isReady: () => true, subscribeCloud: () => () => {} }));
+let currentUser: string | null = "user-a";
+vi.mock("./cloud", () => ({ getClient: () => fakeClient, isReady: () => true, getUserId: () => currentUser, subscribeCloud: () => () => {} }));
 
 const { db, saveDocument, deleteDocument, checkLine, updateDocument, replaceCatalog } = await import("./db");
-const { syncNow } = await import("./sync");
+const { syncNow, ensureAccount } = await import("./sync");
 
 /** Simula "otro móvil": borra la base de datos local */
 async function otherPhone() {
@@ -148,5 +149,38 @@ describe("sincronización", () => {
     await syncNow();
     expect(await db.catalog.count()).toBe(1);
     expect(await db.catalog.get("96385074")).toMatchObject({ name: "N96385074", pvp: 1.95 });
+  });
+});
+
+describe("una cuenta = una tienda", () => {
+  beforeEach(async () => {
+    for (const k of Object.keys(tables)) delete tables[k];
+    await otherPhone();
+    currentUser = "user-a";
+  });
+
+  it("un móvil sin cuenta guardada adopta la actual sin borrar nada", async () => {
+    const id = await saveDocument({ supplier: "P", number: "", date: "", fileName: "", source: "manual" }, [line("96385074", 1, 1)]);
+    expect(await ensureAccount()).toBe(false);
+    expect(await db.docs.get(id)).toBeTruthy();
+    expect((await db.meta.get("accountId"))?.value).toBe("user-a");
+  });
+
+  it("la misma cuenta no borra nada", async () => {
+    await ensureAccount();
+    await saveDocument({ supplier: "P", number: "", date: "", fileName: "", source: "manual" }, [line("96385074", 1, 1)]);
+    expect(await ensureAccount()).toBe(false);
+    expect(await db.docs.count()).toBe(1);
+  });
+
+  it("al entrar otra cuenta se borran los datos locales y no se suben a su tienda", async () => {
+    await ensureAccount();
+    await saveDocument({ supplier: "Tienda A", number: "", date: "", fileName: "", source: "manual" }, [line("96385074", 1, 1)]);
+    currentUser = "user-b";
+    await syncNow();
+    expect(await db.docs.count()).toBe(0);
+    expect(await db.lines.count()).toBe(0);
+    expect(T("docs").size).toBe(0); // nada de la tienda A llegó al servidor
+    expect((await db.meta.get("accountId"))?.value).toBe("user-b");
   });
 });

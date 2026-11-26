@@ -27,13 +27,18 @@ cantidades y precios**, y luego se escanea el producto con el móvil para ver su
 2. **SQL Editor** → pega y ejecuta, en orden, los archivos de `supabase/migrations/`.
 3. **Authentication → Sign In / Providers**: desactiva *Allow new users to sign up*.
    **Authentication → Users → Add user**: crea la cuenta de la tienda (email + contraseña).
-4. En la app: **⚙ Ajustes** → «O escribe la dirección y la clave de Supabase» (Project Settings →
-   API: *Project URL* y la clave *anon/publishable*) → entra con la cuenta de la tienda.
-5. Para el segundo móvil: en Ajustes, «Compartir enlace de la tienda», ábrelo allí y entra con la
-   misma cuenta.
+4. En la app: **⚙ Ajustes** → entra con el email y la contraseña de la tienda. La dirección y la clave pública de
+   Supabase ya vienen integradas en la app (`src/lib/cloud.ts`, o `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`
+   al compilar), no hay que escribirlas.
+5. Segundo móvil: abre la app y entra con la misma cuenta.
+
+**Una cuenta = una tienda.** Todas las tiendas comparten el mismo proyecto de Supabase, pero cada cuenta solo ve
+sus datos (columna `shop_id` = id de la cuenta, con políticas RLS). Para dar de alta una tienda nueva: **Authentication
+→ Users → Add user** (el registro público sigue desactivado). Si en un móvil entra otra cuenta, los datos locales de la
+anterior se borran para no mezclarlos.
 
 Seguridad: la clave *anon* es pública por diseño; los datos solo se pueden leer o escribir con la
-sesión de la cuenta de la tienda (políticas RLS).
+sesión de la cuenta de su tienda (políticas RLS por `shop_id`).
 
 ## Desarrollo
 
