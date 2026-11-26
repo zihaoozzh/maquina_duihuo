@@ -13,18 +13,25 @@ export interface CloudConfig {
 
 const CONFIG_KEY = "cloud-config";
 
-function loadConfig(): CloudConfig | null {
+// Proyecto de Supabase de la app. La URL y la clave publicable son públicas por diseño:
+// los datos solo se leen con la sesión de cada tienda (políticas RLS por shop_id).
+const DEFAULT_CONFIG: CloudConfig = {
+  url: import.meta.env.VITE_SUPABASE_URL ?? "https://trlzbqpxcvrhbkpuaxdg.supabase.co",
+  anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? "sb_publishable_zK633GwVVmnujAuIe5dRsQ_B2BFNEBc",
+};
+
+function loadConfig(): CloudConfig {
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
-    if (!raw) return null;
+    if (!raw) return DEFAULT_CONFIG;
     const c = JSON.parse(raw);
-    return typeof c?.url === "string" && typeof c?.anonKey === "string" ? c : null;
+    return typeof c?.url === "string" && typeof c?.anonKey === "string" ? c : DEFAULT_CONFIG;
   } catch {
-    return null;
+    return DEFAULT_CONFIG;
   }
 }
 
-let config = loadConfig();
+const config = loadConfig();
 let client: SupabaseClient | null = null;
 let session: Session | null = null;
 
@@ -33,14 +40,12 @@ const emit = () => {
   snapshot = { config, session };
   listeners.forEach((f) => f());
 };
-let snapshot: { config: CloudConfig | null; session: Session | null } = { config, session };
+let snapshot: { config: CloudConfig; session: Session | null } = { config, session };
 
 function makeClient() {
-  client = config
-    ? createClient(config.url, config.anonKey, {
-        auth: { persistSession: true, autoRefreshToken: true, storageKey: "tienda-auth", storage: window.localStorage },
-      })
-    : null;
+  client = createClient(config.url, config.anonKey, {
+    auth: { persistSession: true, autoRefreshToken: true, storageKey: "tienda-auth", storage: window.localStorage },
+  });
   session = null;
   if (client) {
     client.auth.getSession().then(({ data }) => {
@@ -76,22 +81,9 @@ export function isReady(): boolean {
   return !!client && !!session;
 }
 
-export function normalizeUrl(url: string): string {
-  let u = url.trim().replace(/\/+$/, "");
-  if (u && !/^https?:\/\//.test(u)) u = `https://${u}`;
-  return u;
-}
-
-export function saveConfig(c: CloudConfig | null) {
-  try {
-    if (c) localStorage.setItem(CONFIG_KEY, JSON.stringify(c));
-    else localStorage.removeItem(CONFIG_KEY);
-  } catch {
-    /* ignorar */
-  }
-  config = c;
-  makeClient();
-  emit();
+/** Id de la cuenta con la sesión iniciada (cada cuenta es una tienda). */
+export function getUserId(): string | null {
+  return session?.user.id ?? null;
 }
 
 export async function signIn(email: string, password: string) {
@@ -117,20 +109,4 @@ export function useCloud() {
     },
     () => snapshot,
   );
-}
-
-// --- "Código de tienda": para configurar el segundo móvil sin copiar claves a mano
-
-export function encodeShopCode(c: CloudConfig): string {
-  return btoa(JSON.stringify({ u: c.url, k: c.anonKey })).replace(/=+$/, "");
-}
-
-export function decodeShopCode(code: string): CloudConfig | null {
-  try {
-    const o = JSON.parse(atob(code.trim()));
-    if (typeof o?.u === "string" && typeof o?.k === "string") return { url: normalizeUrl(o.u), anonKey: o.k };
-  } catch {
-    /* no válido */
-  }
-  return null;
 }

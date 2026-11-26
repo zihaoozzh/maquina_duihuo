@@ -9,7 +9,7 @@
 import { useSyncExternalStore } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { db, getMeta, onLocalChange, type CatalogMeta, type DeliveryDoc, type DocLine } from "./db";
-import { getClient, isReady, subscribeCloud } from "./cloud";
+import { getClient, getUserId, isReady, subscribeCloud } from "./cloud";
 import type { CatalogProduct } from "./catalog";
 
 const BATCH = 500;
@@ -185,12 +185,12 @@ async function push(sb: SupabaseClient) {
     const products = await db.catalog.toArray();
     for (let i = 0; i < products.length; i += BATCH) {
       const chunk = products.slice(i, i + BATCH).map((p) => ({ ...p, import_id: cat.importId }));
-      check(await sb.from("catalog").upsert(chunk));
+      check(await sb.from("catalog").upsert(chunk, { onConflict: "shop_id,key" }));
     }
     check(await sb.from("catalog").delete().neq("import_id", cat.importId));
     const { pushed: _pushed, ...value } = cat;
     void _pushed;
-    check(await sb.from("meta").upsert({ key: "catalog", value }));
+    check(await sb.from("meta").upsert({ key: "catalog", value }, { onConflict: "shop_id,key" }));
     // Solo si sigue siendo la misma importación
     const now = await getMeta<CatalogMeta>("catalog");
     if (now?.importId === cat.importId) await db.meta.put({ key: "catalog", value: { ...cat, pushed: true } });
@@ -269,6 +269,28 @@ async function pull(sb: SupabaseClient) {
 }
 
 // ---------------------------------------------------------------------------
+// Cada cuenta es una tienda: si en este móvil entra otra cuenta, lo guardado de la anterior se borra
+// (si no, se subiría a la tienda equivocada).
+
+/** Devuelve true si se han borrado los datos locales por un cambio de cuenta. */
+export async function ensureAccount(): Promise<boolean> {
+  const id = getUserId();
+  if (!id) return false;
+  const stored = await getMeta<string>("accountId");
+  if (stored === id) return false;
+  // Sin cuenta guardada (móvil que ya se usaba antes de este cambio): se adopta sin borrar
+  if (!stored) {
+    await db.meta.put({ key: "accountId", value: id });
+    return false;
+  }
+  await db.transaction("rw", [db.docs, db.lines, db.catalog, db.tombstones, db.meta], async () => {
+    await Promise.all([db.docs.clear(), db.lines.clear(), db.catalog.clear(), db.tombstones.clear(), db.meta.clear()]);
+    await db.meta.put({ key: "accountId", value: id });
+  });
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Bucle
 
 let running: Promise<void> | null = null;
@@ -293,6 +315,7 @@ export function syncNow(): Promise<void> {
       }
       setState({ status: "syncing", error: "" });
       try {
+        await ensureAccount();
         await push(sb);
         await pull(sb);
         setState({ status: "idle", lastSync: Date.now() });
@@ -323,7 +346,7 @@ export function startSync() {
     const ready = isReady();
     if (ready !== wasReady) {
       wasReady = ready;
-      if (ready) soon();
+      if (ready) void ensureAccount().then(soon);
       else setState({ status: "off" });
     }
   });

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { getLang, setLang, t } from "../lib/i18n";
 import { useCloud } from "../lib/cloud";
 import { useSyncState } from "../lib/sync";
@@ -13,15 +13,29 @@ const NAV = [
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const isHome = pathname === "/";
   const { session } = useCloud();
   const sync = useSyncState();
   const dot = !session ? "bg-slate-300" : sync.status === "error" ? "bg-red-400" : sync.status === "syncing" ? "bg-yellow-300" : "bg-green-400";
   return (
     <div className="mx-auto flex min-h-dvh max-w-3xl flex-col">
       <header className="sticky top-0 z-20 flex items-center justify-between bg-blue-700 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-white">
-        <Link to="/" className="text-lg font-bold tracking-wide">
-          对货 · {t("Albaranes")}
-        </Link>
+        <div className="flex items-center gap-2">
+          {!isHome && (
+            <button
+              type="button"
+              className="rounded-lg bg-white/15 px-3 py-1.5 text-sm font-semibold"
+              onClick={() => (window.history.state?.idx > 0 ? navigate(-1) : navigate("/"))}
+              aria-label={t("Volver")}
+            >
+              ←
+            </button>
+          )}
+          <Link to="/" className="text-lg font-bold tracking-wide">
+            对货 · {t("Albaranes")}
+          </Link>
+        </div>
         <div className="flex items-center gap-2">
         <Link to="/ajustes" className="flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1.5 text-sm font-semibold" aria-label={t("Ajustes")}>
           <span className={`inline-block h-2.5 w-2.5 rounded-full ${dot}`} />⚙
